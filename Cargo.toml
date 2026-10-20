@@ -1,0 +1,19 @@
+[package]
+name = "life"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.70"
+description = "If not geeking out: try being with people, catch surfing: finally living, eating, sleeping."
+authors = ["Scott Schreckengaust"]
+license = "MIT"
+repository = "https://github.com/scottschreckengaust/life"
+readme = "README.md"
+keywords = ["life", "async", "executor", "simulation", "select"]
+categories = ["simulation", "asynchronous"]
+
+# Zero dependencies. The runtime, select!, join! and the alarm clock are all in here.
+[dependencies]
+
+[[bin]]
+name = "life"
+path = "src/main.rs"
