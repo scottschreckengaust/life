@@ -270,3 +270,19 @@ impl Bell {
         })
     }
 }
+
+/// A boxed future, for building a `select` out of a list only known at runtime.
+pub type BoxFuture<'a, T> = Pin<Box<dyn Future<Output = T> + 'a>>;
+
+/// `select! { biased; ... }` over a `Vec`: poll in order, return the first finisher's
+/// index and output. Losers are dropped when the returned future is.
+pub fn select_biased<'a, T: 'a>(mut futs: Vec<BoxFuture<'a, T>>) -> impl Future<Output = (usize, T)> + 'a {
+    std::future::poll_fn(move |cx| {
+        for (i, f) in futs.iter_mut().enumerate() {
+            if let Poll::Ready(v) = f.as_mut().poll(cx) {
+                return Poll::Ready((i, v));
+            }
+        }
+        Poll::Pending
+    })
+}

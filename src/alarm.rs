@@ -11,10 +11,8 @@ pub struct Why(u8);
 impl Why {
     /// The earth spun once.
     pub const MORNING: Why = Why(1);
-    /// A party next door.
-    pub const PARTY: Why = Why(2);
-    /// A big swell before dawn.
-    pub const SWELL: Why = Why(4);
+    /// Something urgent that your rules let wake you: a party, a swell, a baby, a page.
+    pub const URGENT: Why = Why(2);
 
     /// Does this include `other`?
     pub fn has(self, other: Why) -> bool {
