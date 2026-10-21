@@ -1,0 +1,156 @@
+# scott.life.toml: the reference life. Every rule below is one piece of this line:
+#
+#   loop { select! { biased; _ = geek() => {}, _ = people() => {}, _ = surf() => {} } join!(live(), eat());
+#          ALARM.store(false, Relaxed); while !ALARM.load(Acquire) { dream(); spin_loop(); } }
+#
+# Copy it with `spin-life init --preset scott > me.life.toml` and make it yours.
+
+name  = "scott"
+motto = "If not geeking out: try being with people, catch surfing: finally living, eating, sleeping."
+
+# select! { biased; geek, people, surf }: first ready wins, ties go left.
+[priorities]
+all = ["geek", "people", "surf"]
+
+# _ = geek(): only when there's an idea, and a good night's sleep is where ideas come from.
+[pursuit.geek]
+note    = "🧠 geeking out"
+on      = "idea"
+session = "2h"
+
+# _ = people(): family dinner on workdays, a long lunch on weekends.
+[pursuit.people]
+note = "👨‍👩‍👧 family time"
+glyph = "P"
+when = ["workdays 18:00-20:00", "weekends 12:00-15:00"]
+
+# _ = surf(): when there's a swell. A swell stays rideable for 3 hours.
+# A BIG (urgent) swell drops the geek future mid-.await. It never interrupts family.
+[pursuit.surf]
+note     = "🏄 catching waves"
+session  = "2h"
+lasts    = "3h"
+preempts = ["geek"]
+
+[work]
+days  = "mon-fri"
+hours = "09:00-17:00"
+lunch = "12:00-13:00"
+
+# join!(live(), eat())
+[meals]
+breakfast      = "30m"
+dinner         = "20:00"
+weekend_dinner = "19:00"
+dinner_lasts   = "1h"
+
+# while !ALARM.load(Acquire) { dream(); spin_loop(); }
+[sleep]
+wake          = "06:30"
+bed           = "22:30"
+weekend_wake  = "08:00"
+weekend_bed   = "23:00"
+rem_cycle     = "1h30m"
+signal_after  = 5                        # 5 REM cycles in one night: wake with an idea
+signal        = "idea"
+signal_note   = "💡 woke up with an idea"
+woken_by      = ["people", "surf"]       # urgent parties and big swells ring the alarm
+
+# Afternoon coffee: spin_loop() without dream().
+[caffeine]
+cutoff         = "12:00"
+wired          = "6h"
+per_extra_shot = "1h30m"
+
+# ------------------------------------------------------------------------- scenarios
+
+[scenario.happy-path]
+about = "wake, eat, work, lunch, family, eat, sleep. Repeat."
+days  = 3
+
+[scenario.week]
+about  = "five workdays, a surf Saturday, an idea on Sunday"
+days   = 7
+events = [
+  { day = 6, at = "09:00", pursuit = "surf" },
+  { day = 7, at = "16:00", signal = "idea" },
+]
+
+[scenario.coffee]
+about  = "a morning cup, a 3pm cup, then a triple espresso at 20:00"
+days   = 4
+events = [
+  { day = 1, at = "07:00", coffee = 1 },
+  { day = 2, at = "15:00", coffee = 1 },
+  { day = 3, at = "20:00", coffee = 3 },
+]
+
+[scenario.party]
+about  = "a party next door at 00:30 on a work night"
+days   = 2
+events = [
+  { day = 2, at = "00:30", until = "02:30", pursuit = "people", urgent = true, note = "🎉 party next door, you're up" },
+]
+
+[scenario.special-event]
+about  = "a friend's launch party instead of family dinner"
+days   = 2
+events = [
+  { day = 1, skip = "people" },
+  { day = 1, at = "18:30", until = "22:00", pursuit = "people", note = "🎉 launch party" },
+]
+
+[scenario.dawn-patrol]
+about  = "a big swell at 05:30 rings the alarm early"
+days   = 2
+events = [
+  { day = 2, at = "05:30", pursuit = "surf", urgent = true, note = "🌊 big swell before dawn: dawn patrol" },
+]
+
+[scenario.big-wave]
+about  = "an idea at 17:00, then a big swell at 18:00 breaks into it"
+days   = 1
+events = [
+  { day = 1, at = "17:00", signal = "idea" },
+  { day = 1, at = "18:00", pursuit = "surf", urgent = true, note = "🌊 BIG swell" },
+]
+
+[scenario.late-night]
+about  = "one more commit... until 02:00"
+days   = 2
+events = [
+  { day = 1, up_late = "02:00", doing = "geek", note = "🌙 one more commit..." },
+]
+
+[scenario.early-flight]
+about  = "a 05:30 work flight the next morning"
+days   = 3
+events = [
+  { day = 2, flight = "05:30", lands = "09:00" },
+  { day = 2, skip = "people" },
+]
+
+[scenario.deadline]
+about  = "shipping by 21:00, family dinner skipped"
+days   = 2
+events = [
+  { day = 1, work_until = "21:00" },
+]
+
+[scenario.chaos]
+about  = "a week where everything happens"
+days   = 7
+events = [
+  { day = 1, at = "07:00", coffee = 1 },
+  { day = 2, work_until = "21:00" },
+  { day = 2, at = "16:00", coffee = 2 },
+  { day = 3, up_late = "01:30", doing = "geek", note = "🌙 one more commit..." },
+  { day = 4, flight = "05:30" },
+  { day = 4, skip = "people" },
+  { day = 5, at = "01:00", until = "02:00", pursuit = "people", urgent = true, note = "🎉 party next door, you're up" },
+  { day = 5, at = "17:00", signal = "idea" },
+  { day = 5, at = "18:30", pursuit = "surf", urgent = true, note = "🌊 BIG swell" },
+  { day = 7, at = "07:00", pursuit = "surf", urgent = true, note = "🌊 big swell before dawn: dawn patrol" },
+  { day = 7, at = "09:00", signal = "idea" },
+  { day = 7, at = "16:00", pursuit = "surf" },
+]

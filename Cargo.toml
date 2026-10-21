@@ -1,19 +1,30 @@
 [package]
-name = "life"
-version = "0.1.0"
+name = "spin-life"
+version = "0.2.0"
 edition = "2021"
 rust-version = "1.70"
-description = "If not geeking out: try being with people, catch surfing: finally living, eating, sleeping."
+description = "Simulate a life from rules you write: priorities, preemption, interruptions and sleep, on a zero-dependency virtual-time async runtime."
 authors = ["Scott Schreckengaust"]
 license = "MIT"
 repository = "https://github.com/scottschreckengaust/life"
+homepage = "https://github.com/scottschreckengaust/life"
+documentation = "https://docs.rs/spin-life"
 readme = "README.md"
-keywords = ["life", "async", "executor", "simulation", "select"]
-categories = ["simulation", "asynchronous"]
+keywords = ["simulation", "async", "virtual-time", "scheduling", "life"]
+categories = ["simulation", "asynchronous", "command-line-utilities"]
+exclude = [".github/"]
 
-# Zero dependencies. The runtime, select!, join! and the alarm clock are all in here.
+# Zero dependencies: the runtime, select!, join!, the alarm and the config parser are all in here.
 [dependencies]
 
+[lib]
+name = "spin_life"
+
 [[bin]]
-name = "life"
+name = "spin-life"
 path = "src/main.rs"
+
+[package.metadata.binstall]
+pkg-url = "{ repo }/releases/download/v{ version }/{ name }-{ target }{ archive-suffix }"
+pkg-fmt = "tgz"
+bin-dir = "{ bin }{ binary-ext }"

@@ -1,0 +1,75 @@
+name: release
+
+# Push a tag like v0.2.0 (matching Cargo.toml) and this publishes to crates.io with
+# trusted publishing (no API token stored anywhere), then attaches prebuilt binaries
+# to a GitHub Release so `cargo binstall spin-life` skips compiling.
+on:
+  push:
+    tags: ["v*"]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: tag matches Cargo.toml
+        run: |
+          version=$(cargo metadata --no-deps --format-version 1 | jq -r '.packages[0].version')
+          [ "v$version" = "$GITHUB_REF_NAME" ] || { echo "tag $GITHUB_REF_NAME != Cargo.toml v$version"; exit 1; }
+      - run: cargo test --locked
+
+  publish:
+    needs: test
+    runs-on: ubuntu-latest
+    environment: release          # must match the environment set on crates.io (or remove both)
+    permissions:
+      id-token: write             # lets GitHub mint the OIDC token crates.io trusts
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: rust-lang/crates-io-auth-action@v1
+        id: auth
+      - run: cargo publish --locked
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ steps.auth.outputs.token }}
+
+  release:
+    needs: test
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - run: gh release create "$GITHUB_REF_NAME" --generate-notes --title "spin-life $GITHUB_REF_NAME"
+        env:
+          GH_TOKEN: ${{ github.token }}
+
+  binaries:
+    needs: release
+    permissions:
+      contents: write
+    strategy:
+      matrix:
+        include:
+          - { os: ubuntu-latest, target: x86_64-unknown-linux-gnu }
+          - { os: ubuntu-24.04-arm, target: aarch64-unknown-linux-gnu }
+          - { os: macos-latest, target: aarch64-apple-darwin }
+          - { os: windows-latest, target: x86_64-pc-windows-msvc }
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+      - run: cargo build --release --locked --target ${{ matrix.target }}
+      - name: package and upload
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          ext=""; [[ "${{ matrix.target }}" == *windows* ]] && ext=".exe"
+          archive="spin-life-${{ matrix.target }}.tgz"
+          tar czf "$archive" -C "target/${{ matrix.target }}/release" "spin-life$ext"
+          gh release upload "$GITHUB_REF_NAME" "$archive"

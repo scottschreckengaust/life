@@ -17,6 +17,8 @@ jobs:
       - run: cargo clippy --all-targets -- -D warnings
       - run: cargo test
       - run: cargo run --release -- chaos --instant --quiet
+      - run: for f in presets/*.toml; do cargo run -q --release -- check "$f"; done
+      - run: cargo package --locked
 
   msrv:
     runs-on: ubuntu-latest

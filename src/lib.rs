@@ -1,18 +1,23 @@
-//! # life
+//! # spin-life
 //!
 //! ```text
 //! loop { select! { biased; _ = geek() => {}, _ = people() => {}, _ = surf() => {} } join!(live(), eat()); ALARM.store(false, Relaxed); while !ALARM.load(Acquire) { dream(); spin_loop(); } }
 //! ```
 //!
-//! A day-by-day simulation of that line, on a zero-dependency runtime with a clock
-//! you can bend. Plan some [`Day`]s, hand them to [`Life`], and read the [`Journal`].
+//! That line is one person's rules. This crate runs anyone's: write the pursuits, the
+//! priorities, who may interrupt whom and what may wake you in a `.life.toml` file
+//! ([`Rules`]), pick a [`Scenario`], and read the [`Journal`]. It all runs on a
+//! zero-dependency async runtime ([`rt`]) whose clock can skip ahead (virtual time) or
+//! run hours as seconds.
 //!
 //! ```
-//! use life::{rt::Mode, Activity, Day, Life};
+//! use spin_life::{rt::Mode, Life, Rules};
 //!
-//! let journal = Life::new(vec![Day::workday(), Day::workday()]).run(Mode::Virtual);
-//! assert_eq!(journal.day(1).hours(Activity::Work), 7.0);
-//! assert!(journal.day(1).tally.idea); // 8 hours of sleep, 5 REM cycles, 1 idea
+//! let rules = Rules::preset("scott").unwrap();
+//! let journal = Life::new(&rules, rules.scenario("happy-path").unwrap()).run(Mode::Virtual);
+//! assert_eq!(journal.day(1).hours("work"), 7.0);
+//! assert!(journal.day(1).tally.signal); // 8 hours of sleep, 5 REM cycles, 1 idea
+//! assert_eq!(journal.day(2).hours("geek"), 2.0); // which comes first the next evening
 //! ```
 
 #![forbid(unsafe_code)]
@@ -21,16 +26,16 @@
 mod alarm;
 mod journal;
 mod macros;
-mod plan;
 pub mod rt;
+pub mod rules;
+pub mod toml;
 
 pub use alarm::{Alarm, Why};
 pub use journal::{Activity, DaySummary, Journal, Moment, Span, Tally};
-pub use plan::{Day, DayKind, Event, Scenario};
+pub use rules::{Event, Pursuit, RuleError, Rules, Scenario, PRESETS};
 
 use std::{
     cell::{Cell, RefCell},
-    collections::HashSet,
     future::pending,
     hint::spin_loop,
     sync::Arc,
@@ -38,16 +43,6 @@ use std::{
 
 /// One spin of the earth, in hours.
 pub const EARTH_SPIN: f64 = 24.0;
-/// One full dream.
-pub const REM_CYCLE: f64 = 1.5;
-/// REM cycles in one night that send you into the day with an idea.
-pub const IDEA_AFTER: u32 = 5;
-/// How long a geek or surf session runs.
-pub const SESSION: f64 = 2.0;
-/// How long a swell stays rideable.
-pub const SWELL_LASTS: f64 = 3.0;
-/// An afternoon coffee keeps you wired this long, plus 1.5h per extra shot.
-pub const CAFFEINE: f64 = 6.0;
 /// The granularity of one `dream()`: the alarm can still cut it short.
 const TICK: f64 = 0.25;
 
@@ -58,57 +53,181 @@ pub fn hhmm(abs: f64) -> String {
     format!("d{day} {:02}:{:02}", m / 60, m % 60)
 }
 
-/// Somebody living the days in a plan.
+/// A chance to do a pursuit, in absolute hours.
+#[derive(Clone, Debug)]
+struct Opportunity {
+    pursuit: usize,
+    at: f64,
+    /// A window ends at a fixed time; otherwise it is one session long.
+    ends: Option<f64>,
+    /// Gone after this (a swell flattens out, family dinner ends).
+    expires: f64,
+    urgent: bool,
+    note: Option<String>,
+    /// Produced by a good night's sleep.
+    rested: bool,
+    /// A recurring `when` window. Like urgent events, these can preempt.
+    scheduled: bool,
+    used: bool,
+}
+
+/// One day, after the scenario's events have been applied to the rules. Hours are local.
+#[derive(Clone, Debug)]
+struct Plan {
+    works: bool,
+    wake: f64,
+    bed: f64,
+    dinner: f64,
+    work_until: Option<(f64, String)>,
+    flight: Option<(f64, f64)>,
+    up_late: Option<(f64, usize, Option<String>)>,
+}
+
+/// Somebody living a scenario by a set of rules.
 #[derive(Debug)]
-pub struct Life {
-    days: Vec<Day>,
+pub struct Life<'r> {
+    rules: &'r Rules,
+    days: usize,
+    plans: Vec<Plan>,
     echo: bool,
     alarm: Arc<Alarm>,
     journal: RefCell<Journal>,
     today: Cell<usize>,
-    idea: Cell<bool>,
-    used: RefCell<HashSet<usize>>,
+    opps: RefCell<Vec<Opportunity>>,
+    coffee: RefCell<Vec<(usize, f64, u32, bool)>>,
     dreamt: Cell<f64>,
 }
 
-enum Pick {
-    Geek,
-    People(usize),
-    Surf(usize),
-    Rest,
-}
-
 /// Records how long an activity ran when it ends, *or when it is cancelled*.
-/// That makes [`Life::spend`] cancel-safe: a big swell can drop a geek session
-/// mid-`.await` and the hours you already put in still land in the journal.
-struct Doing<'a> {
-    life: &'a Life,
+/// That makes [`Life::spend`] cancel-safe: an urgent pursuit can drop another one
+/// mid-`.await` and the hours already put in still land in the journal.
+struct Doing<'a, 'r> {
+    life: &'a Life<'r>,
     what: Activity,
     since: f64,
 }
 
-impl Drop for Doing<'_> {
+impl Drop for Doing<'_, '_> {
     fn drop(&mut self) {
         self.life.mark(self.what, self.since, self.life.now());
     }
 }
 
-impl Life {
-    pub fn new(days: Vec<Day>) -> Self {
+fn abs(day: usize, hour: f64) -> f64 {
+    (day - 1) as f64 * EARTH_SPIN + hour
+}
+
+impl<'r> Life<'r> {
+    pub fn new(rules: &'r Rules, scenario: &Scenario) -> Self {
+        let n = scenario.days;
+        let mut plans: Vec<Plan> = (0..=n)
+            .map(|d| {
+                let works = rules.works(scenario.start + d);
+                let s = &rules.sleep;
+                Plan {
+                    works,
+                    wake: if works { s.wake } else { s.weekend_wake },
+                    bed: if works { s.bed } else { s.weekend_bed },
+                    dinner: if works { rules.meals.dinner } else { rules.meals.weekend_dinner },
+                    work_until: None,
+                    flight: None,
+                    up_late: None,
+                }
+            })
+            .collect();
+
+        let mut opps = Vec::new();
+        let mut coffee = Vec::new();
+        let mut skips = Vec::new();
+        for ev in &scenario.events {
+            let day = ev.day();
+            let plan = &mut plans[day - 1];
+            match ev {
+                Event::Pursue { pursuit, at, until, urgent, note, .. } => {
+                    let p = &rules.pursuits[*pursuit];
+                    let at = abs(day, *at);
+                    let ends = until.map(|u| abs(day, u));
+                    let expires =
+                        ends.or(p.lasts.map(|l| at + l)).unwrap_or(abs(day, plan.bed).max(at + p.session));
+                    opps.push(Opportunity {
+                        pursuit: *pursuit,
+                        at,
+                        ends,
+                        expires,
+                        urgent: *urgent,
+                        note: note.clone(),
+                        rested: false,
+                        scheduled: false,
+                        used: false,
+                    });
+                }
+                Event::Signal { at, signal, .. } => {
+                    for (i, p) in
+                        rules.pursuits.iter().enumerate().filter(|(_, p)| p.on.as_ref() == Some(signal))
+                    {
+                        let at = abs(day, *at);
+                        let expires = p.lasts.map_or(abs(day, plan.bed), |l| at + l);
+                        opps.push(Opportunity {
+                            pursuit: i,
+                            at,
+                            ends: None,
+                            expires,
+                            urgent: false,
+                            note: None,
+                            rested: false,
+                            scheduled: false,
+                            used: false,
+                        });
+                    }
+                }
+                Event::Coffee { at, shots, .. } => coffee.push((day, abs(day, *at), *shots, false)),
+                Event::WorkUntil { until, note, .. } => plan.work_until = Some((*until, note.clone())),
+                Event::Flight { departs, lands, .. } => {
+                    plan.wake = departs - 1.0;
+                    plan.flight = Some((*departs, *lands));
+                }
+                Event::UpLate { until, pursuit, note, .. } => {
+                    plan.up_late = Some((*until, *pursuit, note.clone()))
+                }
+                Event::Skip { pursuit, .. } => skips.push((day, *pursuit)),
+            }
+        }
+        for day in 1..=n {
+            let weekday = (scenario.start + day - 1) % 7;
+            for (i, p) in rules.pursuits.iter().enumerate() {
+                if skips.contains(&(day, i)) {
+                    continue;
+                }
+                for w in p.windows.iter().filter(|w| w.days[weekday]) {
+                    let (at, end) = (abs(day, w.start), abs(day, w.end));
+                    opps.push(Opportunity {
+                        pursuit: i,
+                        at,
+                        ends: Some(end),
+                        expires: end,
+                        urgent: false,
+                        note: None,
+                        rested: false,
+                        scheduled: true,
+                        used: false,
+                    });
+                }
+            }
+        }
+
+        let pursuits = rules.pursuits.iter().map(|p| (p.name.clone(), p.glyph)).collect();
         Life {
-            journal: RefCell::new(Journal::new(days.len())),
-            days,
+            rules,
+            days: n,
+            plans,
             echo: false,
             alarm: Arc::default(),
+            journal: RefCell::new(Journal::new(n, pursuits, rules.sleep.signal.clone())),
             today: Cell::new(1),
-            idea: Cell::new(false),
-            used: RefCell::default(),
+            opps: RefCell::new(opps),
+            coffee: RefCell::new(coffee),
             dreamt: Cell::new(0.0),
         }
-    }
-
-    pub fn scenario(s: &Scenario) -> Self {
-        Self::new(s.days.clone())
     }
 
     /// Print the diary as it happens.
@@ -117,18 +236,15 @@ impl Life {
         self
     }
 
-    /// Live every planned day. The clock starts at the first morning's alarm.
+    /// Live every day of the scenario. The clock starts at the first morning's alarm.
     pub fn run(self, mode: rt::Mode) -> Journal {
-        let start = self.days.first().map_or(0.0, |d| d.wake);
+        let start = self.plans[0].wake;
         rt::block_on(mode, start, self.live())
     }
 
     async fn live(self) -> Journal {
-        let n = self.days.len();
         // Sunrise: one ring per spin of the earth, at each next morning's wake time.
-        let wakes: Vec<f64> = (1..=n)
-            .map(|d| d as f64 * EARTH_SPIN + self.days.get(d).map_or(Day::workday().wake, |next| next.wake))
-            .collect();
+        let wakes: Vec<f64> = (1..=self.days).map(|d| abs(d + 1, self.plans[d].wake)).collect();
         let alarm = self.alarm.clone();
         let sunrise = rt::spawn(async move {
             for at in wakes {
@@ -136,10 +252,8 @@ impl Life {
                 alarm.ring(Why::MORNING);
             }
         });
-
-        for d in 1..=n {
+        for d in 1..=self.days {
             self.today.set(d);
-            self.used.borrow_mut().clear();
             self.morning().await;
             self.work().await;
             self.evening().await;
@@ -153,83 +267,89 @@ impl Life {
     // ---------------------------------------------------------------- the day
 
     async fn morning(&self) {
-        let plan = self.plan();
         self.log(if self.today.get() == 1 { "⏰ rise and shine" } else { "⏰ alarm: the earth spun once" });
-        if self.idea.get() {
-            self.log("💡 woke up with an idea");
+        if self.opps.borrow().iter().any(|o| o.rested && !o.used) {
+            self.log(self.rules.sleep.signal_note.clone());
         }
         self.log("🍳 breakfast");
-        self.spend(Activity::Eat, self.now() + 0.5).await;
-        if let Some(departs) = plan.flight {
-            self.spend(Activity::Live, self.abs(departs)).await;
+        self.spend(Activity::Eat, self.now() + self.rules.meals.breakfast).await;
+        if let Some((departs, lands)) = self.plan().flight {
+            self.spend(Activity::Live, self.at(departs)).await;
             self.log("✈️  wheels up");
-            self.spend(Activity::Flight, self.abs(9.0)).await;
+            self.spend(Activity::Travel, self.at(lands)).await;
         }
     }
 
     async fn work(&self) {
-        let plan = self.plan();
-        if plan.kind != DayKind::Workday {
+        let (plan, Some(w)) = (self.plan(), self.rules.work.as_ref()) else { return };
+        if !plan.works {
             return;
         }
-        self.spend(Activity::Live, self.abs(9.0)).await;
-        self.log("💼 work");
-        self.spend(Activity::Work, self.abs(12.0)).await;
-        self.log("🥪 lunch");
-        self.spend(Activity::Eat, self.abs(13.0)).await;
-        self.spend(Activity::Work, self.abs(plan.deadline().unwrap_or(17.0))).await;
-        if plan.deadline().is_some() {
-            self.log("🚀 shipped it");
+        let end = plan.work_until.as_ref().map_or(w.end, |x| x.0);
+        self.spend(Activity::Live, self.at(w.start)).await;
+        self.log(w.note.clone());
+        if let Some((lunch, back)) = w.lunch.filter(|l| l.0 < end) {
+            self.spend(Activity::Work, self.at(lunch)).await;
+            self.log("🥪 lunch");
+            self.spend(Activity::Eat, self.at(back)).await;
+        }
+        self.spend(Activity::Work, self.at(end)).await;
+        if let Some((_, note)) = &plan.work_until {
+            self.log(note.clone());
         }
     }
 
-    /// If not geeking out: try being with people, catch surfing: finally living, eating.
+    /// `loop { select! { biased; <your priorities> } }` until dinner, then `join!(live(), eat())`.
     async fn evening(&self) {
         let plan = self.plan();
-        let close = self.abs(if plan.kind == DayKind::Workday { 20.0 } else { 19.0 });
+        let (close, horizon) = (self.at(plan.dinner), self.at(plan.bed));
+        let order = if plan.works { &self.rules.workday } else { &self.rules.weekend };
         while self.now() < close {
             let idle = self.now();
-            let pick = select! {
-                biased;
-                _ = self.geek_ready(close) => Pick::Geek,
-                (i, _) = self.arrives(self.company()) => Pick::People(i),
-                (i, _) = self.arrives(self.waves()) => Pick::Surf(i),
-                _ = rt::sleep_until(close) => Pick::Rest,
-            };
+            let mut arms: Vec<rt::BoxFuture<'_, Option<usize>>> =
+                order.iter().map(|&p| Box::pin(self.ready(p, horizon)) as rt::BoxFuture<'_, _>).collect();
+            arms.push(Box::pin(async move {
+                rt::sleep_until(close).await;
+                None
+            }));
+            let (_, pick) = rt::select_biased(arms).await;
             self.mark(Activity::Live, idle, self.now());
             match pick {
-                Pick::Geek => self.geek().await,
-                Pick::People(i) => self.people(i).await,
-                Pick::Surf(i) => self.ride(i).await,
-                Pick::Rest => break,
+                Some(o) => self.pursue(o, horizon).await,
+                None => break,
             }
         }
-        let (now, bed) = (self.now(), self.abs(plan.bedtime));
+        let (now, bed) = (self.now(), self.at(plan.bed));
         self.log("🍝 dinner");
-        join!(self.spend(Activity::Live, bed), self.spend(Activity::Eat, now + 1.0));
-        if let Some(until) = plan.late_night() {
-            self.log("🌙 one more commit...");
-            self.spend(Activity::Geek, self.abs(until)).await;
+        join!(
+            self.spend(Activity::Live, bed),
+            self.spend(Activity::Eat, now + self.rules.meals.dinner_lasts)
+        );
+        if let Some((until, p, note)) = &plan.up_late {
+            self.log(note.clone().unwrap_or_else(|| format!("🌙 up late: {}", self.rules.pursuits[*p].name)));
+            self.spend(Activity::Pursuit(*p), self.at(*until)).await;
         }
     }
 
     /// `ALARM.store(false, Relaxed); while !ALARM.load(Acquire) { dream(); spin_loop(); }`
     async fn night(&self) {
-        let plan = self.plan();
-        // Things that go bump in the night ring the same alarm as the sunrise.
-        let bumps: Vec<rt::JoinHandle> = plan
-            .events
+        let lights_out = self.now();
+        let next_wake = abs(self.today.get() + 1, self.plans[self.today.get()].wake);
+        let woken_by = &self.rules.sleep.woken_by;
+        let disturbs = move |o: &Opportunity| {
+            !o.used && o.urgent && woken_by.contains(&o.pursuit) && o.at >= lights_out && o.at < next_wake
+        };
+        // Whatever your rules say may wake you rings the same alarm as the sunrise.
+        let ringers: Vec<rt::JoinHandle> = self
+            .opps
+            .borrow()
             .iter()
-            .filter_map(|e| match *e {
-                Event::Party { at, .. } if at >= plan.bedtime => Some((self.abs(at), Why::PARTY)),
-                Event::Swell { at, big: true } if at >= plan.bedtime => Some((self.abs(at), Why::SWELL)),
-                _ => None,
-            })
-            .map(|(at, why)| {
-                let alarm = self.alarm.clone();
+            .filter(|o| disturbs(o))
+            .map(|o| {
+                let (alarm, at) = (self.alarm.clone(), o.at);
                 rt::spawn(async move {
                     rt::sleep_until(at).await;
-                    alarm.ring(why);
+                    alarm.ring(Why::URGENT);
                 })
             })
             .collect();
@@ -244,84 +364,110 @@ impl Life {
                 spin_loop();
             }
             let why = self.alarm.take();
-            if why.has(Why::PARTY) {
-                self.night_owl().await;
-            }
-            if why.has(Why::SWELL) {
-                self.dawn_patrol().await;
+            if why.has(Why::URGENT) {
+                let now = self.now();
+                while let Some(o) = self.next(|o| disturbs(o) && o.at <= now) {
+                    self.tally(|t| t.wakeups += 1);
+                    self.pursue(o, next_wake).await;
+                }
+                if !self.alarm.rung() {
+                    self.log("😴 back to bed");
+                }
             }
             if why.has(Why::MORNING) {
                 break;
             }
         }
+        ringers.iter().for_each(rt::JoinHandle::abort);
 
-        bumps.iter().for_each(rt::JoinHandle::abort);
-        if Self::cycles(self.dreamt.get()) >= IDEA_AFTER {
-            self.idea.set(true);
-            self.tally(|t| t.idea = true);
+        let s = &self.rules.sleep;
+        if s.signal_after.is_some_and(|n| Self::cycles(self.dreamt.get(), s.rem_cycle) >= n) {
+            self.tally(|t| t.signal = true);
+            let now = self.now();
+            let mut opps = self.opps.borrow_mut();
+            for (i, _) in
+                self.rules.pursuits.iter().enumerate().filter(|(_, p)| p.on.as_ref() == Some(&s.signal))
+            {
+                if !opps.iter().any(|o| o.rested && !o.used && o.pursuit == i) {
+                    opps.push(Opportunity {
+                        pursuit: i,
+                        at: now,
+                        ends: None,
+                        expires: f64::INFINITY,
+                        urgent: false,
+                        note: None,
+                        rested: true,
+                        scheduled: false,
+                        used: false,
+                    });
+                }
+            }
         }
     }
 
     // ------------------------------------------------------------ activities
 
-    async fn geek(&self) {
-        if !self.idea.replace(false) {
-            if let Some((i, _)) = self.idea_strikes(f64::INFINITY) {
-                self.used.borrow_mut().insert(i);
+    /// Resolves when pursuit `p` has an opportunity; never, if it has none before `horizon`.
+    async fn ready(&self, p: usize, horizon: f64) -> Option<usize> {
+        let now = self.now();
+        match self.next(|o| !o.used && o.pursuit == p && o.at < horizon && o.expires > now) {
+            Some(i) => {
+                let at = self.opps.borrow()[i].at;
+                rt::sleep_until(at.max(now)).await;
+                Some(i)
             }
-        }
-        self.log("🧠 geeking out");
-        let end = self.now() + SESSION;
-        select! {
-            biased;
-            _ = self.spend(Activity::Geek, end) => {},
-            (i, _) = self.arrives(self.big_wave(end)) => {
-                self.log("🌊 BIG swell: dropping the geek future mid-.await (Drop guard saved the hours)");
-                self.ride(i).await;
-            },
+            None => pending().await,
         }
     }
 
-    async fn people(&self, i: usize) {
-        self.used.borrow_mut().insert(i);
-        let (until, note) = match self.plan().events[i] {
-            Event::Family { until, .. } => (until, "👨‍👩‍👧 family time"),
-            Event::Party { until, .. } => (until, "🎉 party"),
-            _ => return,
-        };
-        self.log(note);
-        self.spend(Activity::People, self.abs(until)).await;
-    }
-
-    async fn ride(&self, i: usize) {
-        self.used.borrow_mut().insert(i);
-        self.log("🏄 catching waves");
-        self.spend(Activity::Surf, self.now() + SESSION).await;
-    }
-
-    async fn night_owl(&self) {
-        let bed = self.plan().bedtime;
-        let next = self.next(|e| match *e {
-            Event::Party { at, until } if at >= bed && until > at => Some(at),
-            _ => None,
-        });
-        let Some((i, _)) = next else { return };
-        self.tally(|t| t.wakeups += 1);
-        self.log("🎉 party next door, you're up");
-        self.people(i).await;
-        self.log("😴 back to bed");
-    }
-
-    async fn dawn_patrol(&self) {
-        let bed = self.plan().bedtime;
-        let next = self.next(|e| match *e {
-            Event::Swell { at, big: true } if at >= bed => Some(at),
-            _ => None,
-        });
-        let Some((i, _)) = next else { return };
-        self.tally(|t| t.wakeups += 1);
-        self.log("🌊 big swell before dawn: dawn patrol");
-        self.ride(i).await;
+    /// Take an opportunity. Unless the pursuit is protected, an urgent event or a scheduled
+    /// window of a pursuit that `preempts` this one drops it mid-`.await` and takes over.
+    async fn pursue(&self, mut o: usize, horizon: f64) {
+        loop {
+            let now = self.now();
+            let (p, end, note) = {
+                let mut opps = self.opps.borrow_mut();
+                let op = &mut opps[o];
+                op.used = true;
+                let pursuit = &self.rules.pursuits[op.pursuit];
+                let end = op.ends.unwrap_or(now + pursuit.session);
+                (op.pursuit, end, op.note.clone().unwrap_or_else(|| pursuit.note.clone()))
+            };
+            self.log(note);
+            let me = &self.rules.pursuits[p];
+            let rules = self.rules;
+            let interrupter = (!me.protected)
+                .then(|| {
+                    self.next(|q| {
+                        !q.used
+                            && (q.urgent || q.scheduled)
+                            && rules.pursuits[q.pursuit].preempts.contains(&p)
+                            && q.at < end
+                            && q.at < horizon
+                            && q.expires > now
+                    })
+                })
+                .flatten();
+            let Some(q) = interrupter else {
+                self.spend(Activity::Pursuit(p), end).await;
+                return;
+            };
+            let at = self.opps.borrow()[q].at;
+            let interrupted = select! {
+                biased;
+                _ = self.spend(Activity::Pursuit(p), end) => false,
+                _ = rt::sleep_until(at) => true,
+            };
+            if !interrupted {
+                return;
+            }
+            let them = &self.rules.pursuits[self.opps.borrow()[q].pursuit].name;
+            self.log(format!(
+                "⚡ {them} preempts {}: dropped its future mid-.await (the Drop guard kept the hours)",
+                me.name
+            ));
+            o = q;
+        }
     }
 
     /// One slice of the night: dream, or lie there spinning if you had coffee.
@@ -336,17 +482,18 @@ impl Life {
             return self.mark(Activity::Wired, t0, t1);
         }
         self.mark(Activity::Sleep, t0, t1);
+        let cycle = self.rules.sleep.rem_cycle;
         let before = self.dreamt.get();
         self.dreamt.set(before + (t1 - t0));
-        let new = Self::cycles(self.dreamt.get()) - Self::cycles(before);
+        let new = Self::cycles(self.dreamt.get(), cycle) - Self::cycles(before, cycle);
         if new > 0 {
             self.tally(|t| t.dreams += new);
             self.log("💭 dreaming");
         }
     }
 
-    /// Run an activity until `until`. Cancel-safe (see [`Doing`]). The barista
-    /// serves any coffee due along the way, except at the dinner table.
+    /// Run an activity until `until`. Cancel-safe (see [`Doing`]). Any coffee due along
+    /// the way gets served, except at the table.
     async fn spend(&self, what: Activity, until: f64) {
         let _doing = Doing { life: self, what, since: self.now() };
         if what != Activity::Eat {
@@ -356,79 +503,27 @@ impl Life {
     }
 
     async fn barista(&self, until: f64) {
-        while let Some((i, at)) = self
-            .next(|e| match *e {
-                Event::Coffee { at, .. } => Some(at),
-                _ => None,
-            })
-            .filter(|&(_, at)| at < until)
-        {
-            self.used.borrow_mut().insert(i);
+        loop {
+            let next = {
+                let cups = self.coffee.borrow();
+                cups.iter()
+                    .enumerate()
+                    .filter(|(_, c)| !c.3 && c.1 < until)
+                    .min_by(|a, b| a.1 .1.total_cmp(&b.1 .1))
+                    .map(|(i, c)| (i, c.1, c.2))
+            };
+            let Some((i, at, shots)) = next else { return };
+            self.coffee.borrow_mut()[i].3 = true;
             rt::sleep_until(at).await;
-            let Event::Coffee { shots, .. } = self.plan().events[i] else { continue };
-            self.tally(|t| t.coffee += u32::from(shots));
+            self.tally(|t| t.coffee += shots);
             self.log(if shots > 1 { format!("☕ coffee x{shots}") } else { "☕ coffee".into() });
         }
     }
 
-    // -------------------------------------------------------------- triggers
-
-    async fn geek_ready(&self, close: f64) {
-        if !self.idea.get() {
-            self.arrives(self.idea_strikes(close)).await;
-        }
-    }
-
-    /// Resolves when the planned event arrives; never, if there isn't one.
-    async fn arrives(&self, next: Option<(usize, f64)>) -> (usize, f64) {
-        match next {
-            Some(next) => {
-                rt::sleep_until(next.1).await;
-                next
-            }
-            None => pending().await,
-        }
-    }
-
-    fn idea_strikes(&self, before: f64) -> Option<(usize, f64)> {
-        self.next(|e| match *e {
-            Event::Idea { at } => Some(at),
-            _ => None,
-        })
-        .filter(|&(_, at)| at < before)
-    }
-
-    fn company(&self) -> Option<(usize, f64)> {
-        let (now, bed) = (self.now(), self.plan().bedtime);
-        self.next(|e| match *e {
-            Event::Family { at, until } | Event::Party { at, until } if at < bed && self.abs(until) > now => {
-                Some(at)
-            }
-            _ => None,
-        })
-    }
-
-    fn waves(&self) -> Option<(usize, f64)> {
-        let (now, bed) = (self.now(), self.plan().bedtime);
-        self.next(|e| match *e {
-            Event::Swell { at, .. } if at < bed && self.abs(at + SWELL_LASTS) > now => Some(at),
-            _ => None,
-        })
-    }
-
-    fn big_wave(&self, before: f64) -> Option<(usize, f64)> {
-        let (now, bed) = (self.now(), self.plan().bedtime);
-        self.next(|e| match *e {
-            Event::Swell { at, big: true } if at < bed && self.abs(at + SWELL_LASTS) > now => Some(at),
-            _ => None,
-        })
-        .filter(|&(_, at)| at < before)
-    }
-
     // ---------------------------------------------------------------- plumbing
 
-    fn plan(&self) -> &Day {
-        &self.days[self.today.get() - 1]
+    fn plan(&self) -> &Plan {
+        &self.plans[self.today.get() - 1]
     }
 
     fn now(&self) -> f64 {
@@ -436,37 +531,34 @@ impl Life {
     }
 
     /// Today's hour `h` as an absolute simulated hour.
-    fn abs(&self, h: f64) -> f64 {
-        (self.today.get() - 1) as f64 * EARTH_SPIN + h
+    fn at(&self, h: f64) -> f64 {
+        abs(self.today.get(), h)
     }
 
-    /// The earliest unused event `pick` cares about, as `(index, absolute time)`.
-    fn next(&self, pick: impl Fn(&Event) -> Option<f64>) -> Option<(usize, f64)> {
-        let used = self.used.borrow();
-        self.plan()
-            .events
-            .iter()
+    /// The earliest opportunity matching `pick`.
+    fn next(&self, pick: impl Fn(&Opportunity) -> bool) -> Option<usize> {
+        let opps = self.opps.borrow();
+        opps.iter()
             .enumerate()
-            .filter(|(i, _)| !used.contains(i))
-            .filter_map(|(i, e)| pick(e).map(|h| (i, self.abs(h))))
-            .min_by(|a, b| a.1.total_cmp(&b.1))
+            .filter(|(_, o)| pick(o))
+            .min_by(|a, b| a.1.at.total_cmp(&b.1.at))
+            .map(|(i, _)| i)
     }
 
+    /// When today's afternoon coffee stops keeping you awake.
     fn caffeine(&self) -> f64 {
-        self.plan()
-            .events
+        let c = &self.rules.caffeine;
+        let today = self.today.get();
+        self.coffee
+            .borrow()
             .iter()
-            .filter_map(|e| match *e {
-                Event::Coffee { at, shots } if at >= 12.0 => {
-                    Some(self.abs(at + CAFFEINE + 1.5 * f64::from(shots.saturating_sub(1))))
-                }
-                _ => None,
-            })
+            .filter(|cup| cup.0 == today && cup.1 >= abs(today, c.cutoff))
+            .map(|cup| cup.1 + c.wired + c.per_extra_shot * f64::from(cup.2.saturating_sub(1)))
             .fold(f64::NEG_INFINITY, f64::max)
     }
 
-    fn cycles(hours: f64) -> u32 {
-        (hours / REM_CYCLE + 1e-9).floor() as u32
+    fn cycles(hours: f64, cycle: f64) -> u32 {
+        (hours / cycle + 1e-9).floor() as u32
     }
 
     fn mark(&self, what: Activity, start: f64, end: f64) {

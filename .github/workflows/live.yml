@@ -1,14 +1,17 @@
 name: live
 
-# Actions -> live -> Run workflow, pick a life. The report lands in the run summary.
+# Actions -> live -> Run workflow. The report lands in the run summary.
 on:
   workflow_dispatch:
     inputs:
-      scenario:
-        description: which life to live
+      preset:
+        description: whose life
         type: choice
-        default: week
-        options: [happy-path, week, coffee, party, special-event, dawn-patrol, big-wave, late-night, early-flight, deadline, chaos]
+        default: scott
+        options: [scott, parent, agent]
+      scenario:
+        description: which scenario (blank = the preset's default; `spin-life list -p NAME` lists them)
+        default: ""
       scale:
         description: seconds per simulated hour (0 = instant)
         default: "0"
@@ -21,10 +24,11 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - name: live
         env:
+          PRESET: ${{ inputs.preset }}
           SCENARIO: ${{ inputs.scenario }}
           SCALE: ${{ inputs.scale }}
         run: |
           cargo build --release -q
           if [ "$SCALE" = "0" ]; then pace="--instant"; else pace="--scale $SCALE"; fi
-          ./target/release/life "$SCENARIO" $pace | tee life.txt
+          ./target/release/spin-life run $SCENARIO --preset "$PRESET" $pace | tee life.txt
           { echo '```text'; cat life.txt; echo '```'; } >> "$GITHUB_STEP_SUMMARY"

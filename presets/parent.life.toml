@@ -1,0 +1,67 @@
+# parent.life.toml: same engine, different values. Kids come first, and they are
+# protected: nothing interrupts them. Guitar happens when inspiration strikes.
+# Running is the weekend hobby, and on weekends it moves up the list.
+
+name  = "parent"
+motto = "Kids first, music when it comes, miles on Saturday."
+
+[priorities]
+workday = ["kids", "guitar", "running"]
+weekend = ["running", "kids", "guitar"]
+
+[pursuit.kids]
+note      = "🧒 kids"
+when      = ["workdays 17:30-20:00", "weekends 09:00-12:00", "weekends 15:00-18:00"]
+protected = true                         # nothing interrupts kids...
+preempts  = ["guitar"]                   # ...and kids' time interrupts guitar
+
+[pursuit.guitar]
+note    = "🎸 guitar"
+on      = "inspiration"
+session = "1h30m"
+
+[pursuit.running]
+note  = "🏃 running"
+glyph = "R"
+when  = "sat,sun 07:00-08:30"
+
+[work]
+days  = "mon-fri"
+hours = "08:30-17:00"
+lunch = "12:30-13:00"
+
+[meals]
+breakfast    = "30m"
+dinner       = "20:00"
+dinner_lasts = "45m"
+
+[sleep]
+wake         = "06:00"
+bed          = "22:00"
+weekend_wake = "06:30"                   # kids don't know it's Saturday
+signal_after = 5
+signal       = "inspiration"
+signal_note  = "🎵 woke up with a riff"
+woken_by     = ["kids"]
+
+[caffeine]
+cutoff = "14:00"
+wired  = "5h"
+
+[scenario.teething]
+about  = "a teething week: the baby wakes you at 02:00 three nights running"
+days   = 7
+events = [
+  { day = 2, at = "02:00", until = "03:00", pursuit = "kids", urgent = true, note = "🍼 baby's up" },
+  { day = 3, at = "02:00", until = "03:30", pursuit = "kids", urgent = true, note = "🍼 baby's up" },
+  { day = 4, at = "02:00", until = "03:00", pursuit = "kids", urgent = true, note = "🍼 baby's up" },
+]
+
+[scenario.gig]
+about  = "an open-mic night on Thursday, a 10k on Saturday"
+days   = 7
+events = [
+  { day = 4, skip = "kids" },
+  { day = 4, at = "19:00", until = "22:30", pursuit = "guitar", note = "🎤 open mic" },
+  { day = 6, at = "07:00", until = "09:00", pursuit = "running", note = "🏅 10k race" },
+]

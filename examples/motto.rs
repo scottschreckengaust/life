@@ -1,4 +1,4 @@
-//! The motto, literally. One simulated hour = one real second.
+//! The motto, literally. (The library runs anyone's rules; this runs exactly this one.) One simulated hour = one real second.
 //!
 //!     cargo run --example motto        # Ctrl-C to wake up for good
 //!
@@ -6,7 +6,7 @@
 //! `std::thread` that sleeps through one spin of the earth. It burns a core all
 //! night. That's the joke, and also why the library itself `.await`s its dreams.
 
-use life::{join, rt, select};
+use spin_life::{join, rt, select};
 use std::{
     hint::spin_loop,
     sync::atomic::{AtomicBool, AtomicU64, Ordering::*},

@@ -1,6 +1,6 @@
 //! The runtime underneath: select!, join!, virtual time, and the alarm's memory ordering.
 
-use life::{
+use spin_life::{
     join,
     rt::{self, Mode},
     select, Alarm, Why,
@@ -131,12 +131,12 @@ fn acquire_sees_why_the_alarm_rang() {
         let alarm = Arc::new(Alarm::default());
         let ringer = {
             let alarm = alarm.clone();
-            thread::spawn(move || alarm.ring(Why::PARTY))
+            thread::spawn(move || alarm.ring(Why::URGENT))
         };
         while !alarm.rung() {
             spin_loop();
         }
-        assert!(alarm.take().has(Why::PARTY));
+        assert!(alarm.take().has(Why::URGENT));
         ringer.join().unwrap();
     }
 }
@@ -144,12 +144,11 @@ fn acquire_sees_why_the_alarm_rang() {
 #[test]
 fn the_nightly_reset_forgets_old_rings() {
     let alarm = Alarm::default();
-    alarm.ring(Why::SWELL);
+    alarm.ring(Why::URGENT);
     alarm.reset();
     assert!(!alarm.rung());
     alarm.ring(Why::MORNING);
-    alarm.ring(Why::PARTY);
     let why = alarm.take();
-    assert!(why.has(Why::MORNING) && why.has(Why::PARTY) && !why.has(Why::SWELL));
+    assert!(why.has(Why::MORNING) && !why.has(Why::URGENT));
     assert!(!alarm.rung());
 }

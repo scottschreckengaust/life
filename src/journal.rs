@@ -3,7 +3,7 @@
 use crate::{hhmm, EARTH_SPIN};
 use std::fmt::Write;
 
-/// Everything you can be doing.
+/// Everything you can be doing: the engine's own activities, plus the pursuits a life file defines.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum Activity {
     Sleep,
@@ -11,54 +11,16 @@ pub enum Activity {
     Wired,
     Eat,
     Work,
-    Flight,
-    Geek,
-    People,
-    Surf,
+    Travel,
     Live,
+    /// Index into the life file's pursuits.
+    Pursuit(usize),
 }
 
 impl Activity {
-    pub const ALL: [Activity; 9] = [
-        Activity::Sleep,
-        Activity::Wired,
-        Activity::Eat,
-        Activity::Work,
-        Activity::Flight,
-        Activity::Geek,
-        Activity::People,
-        Activity::Surf,
-        Activity::Live,
-    ];
-
-    /// One character on the timeline.
-    pub fn glyph(self) -> char {
-        match self {
-            Activity::Sleep => 'z',
-            Activity::Wired => '~',
-            Activity::Eat => 'e',
-            Activity::Work => 'W',
-            Activity::Flight => '>',
-            Activity::Geek => 'G',
-            Activity::People => 'P',
-            Activity::Surf => 'S',
-            Activity::Live => '.',
-        }
-    }
-
-    pub fn label(self) -> &'static str {
-        match self {
-            Activity::Sleep => "sleep",
-            Activity::Wired => "wired",
-            Activity::Eat => "eat",
-            Activity::Work => "work",
-            Activity::Flight => "flight",
-            Activity::Geek => "geek",
-            Activity::People => "people",
-            Activity::Surf => "surf",
-            Activity::Live => "living",
-        }
-    }
+    /// The built-in activities, in the order the names in [`crate::rules::BUILTIN`] use.
+    pub const BUILTIN: [Activity; 6] =
+        [Activity::Sleep, Activity::Wired, Activity::Eat, Activity::Work, Activity::Travel, Activity::Live];
 
     /// When two things overlap on the timeline, the higher rank is drawn.
     fn rank(self) -> u8 {
@@ -66,17 +28,15 @@ impl Activity {
             Activity::Live => 0,
             Activity::Eat => 1,
             Activity::Work => 2,
-            Activity::Flight => 3,
-            Activity::People => 4,
-            Activity::Geek => 5,
-            Activity::Surf => 6,
-            Activity::Sleep => 7,
-            Activity::Wired => 8,
+            Activity::Travel => 3,
+            Activity::Pursuit(_) => 4,
+            Activity::Sleep => 5,
+            Activity::Wired => 6,
         }
     }
 }
 
-/// A stretch of time doing one thing. `day` is the plan it belongs to, so a night's
+/// A stretch of time doing one thing. `day` is the day it belongs to, so a night's
 /// sleep counts toward the day you went to bed.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Span {
@@ -98,8 +58,8 @@ pub struct Moment {
 pub struct Tally {
     /// Full REM cycles.
     pub dreams: u32,
-    /// Woke up with an idea after this day's night.
-    pub idea: bool,
+    /// The night after this day produced the sleep signal (an idea, for the reference life).
+    pub signal: bool,
     pub coffee: u32,
     /// Times something pulled you out of bed before the alarm.
     pub wakeups: u32,
@@ -109,28 +69,33 @@ pub struct Tally {
 #[derive(Clone, Debug, PartialEq)]
 pub struct DaySummary {
     pub day: usize,
-    hours: [f64; 9],
+    names: Vec<String>,
+    hours: Vec<f64>,
     pub tally: Tally,
 }
 
 impl DaySummary {
-    /// Hours spent on `what`, including the night that followed this day.
-    pub fn hours(&self, what: Activity) -> f64 {
-        self.hours[Activity::ALL.iter().position(|a| *a == what).unwrap()]
+    /// Hours spent on `name` (a pursuit, or sleep, wired, eat, work, travel, living),
+    /// including the night that followed this day.
+    pub fn hours(&self, name: &str) -> f64 {
+        self.names.iter().position(|n| n == name).map_or(0.0, |i| self.hours[i])
     }
 }
 
 /// Everything that happened, in order.
-#[derive(Clone, Debug, Default, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct Journal {
     pub spans: Vec<Span>,
     pub moments: Vec<Moment>,
     pub(crate) tallies: Vec<Tally>,
+    /// Pursuit names and glyphs, from the life file.
+    pub(crate) pursuits: Vec<(String, char)>,
+    pub(crate) signal: String,
 }
 
 impl Journal {
-    pub(crate) fn new(days: usize) -> Self {
-        Journal { tallies: vec![Tally::default(); days], ..Default::default() }
+    pub(crate) fn new(days: usize, pursuits: Vec<(String, char)>, signal: String) -> Self {
+        Journal { spans: vec![], moments: vec![], tallies: vec![Tally::default(); days], pursuits, signal }
     }
 
     pub(crate) fn mark(&mut self, day: usize, what: Activity, start: f64, end: f64) {
@@ -145,6 +110,36 @@ impl Journal {
         }
     }
 
+    /// The name of an activity: a pursuit's name, or a built-in one.
+    pub fn name(&self, what: Activity) -> &str {
+        match what {
+            Activity::Pursuit(i) => &self.pursuits[i].0,
+            other => {
+                let i = Activity::BUILTIN.iter().position(|a| *a == other).unwrap();
+                crate::rules::BUILTIN[i]
+            }
+        }
+    }
+
+    /// One character on the timeline.
+    pub fn glyph(&self, what: Activity) -> char {
+        match what {
+            Activity::Sleep => 'z',
+            Activity::Wired => '~',
+            Activity::Eat => 'e',
+            Activity::Work => 'W',
+            Activity::Travel => '>',
+            Activity::Live => '.',
+            Activity::Pursuit(i) => self.pursuits[i].1,
+        }
+    }
+
+    fn activities(&self) -> Vec<Activity> {
+        let mut all = Activity::BUILTIN.to_vec();
+        all.extend((0..self.pursuits.len()).map(Activity::Pursuit));
+        all
+    }
+
     /// How many days were lived.
     pub fn days(&self) -> usize {
         self.tallies.len()
@@ -152,17 +147,18 @@ impl Journal {
 
     /// Totals for day `day` (1-based).
     pub fn day(&self, day: usize) -> DaySummary {
-        let mut hours = [0.0; 9];
+        let all = self.activities();
+        let mut hours = vec![0.0; all.len()];
         for s in self.spans.iter().filter(|s| s.day == day) {
-            let i = Activity::ALL.iter().position(|a| *a == s.what).unwrap();
-            hours[i] += s.end - s.start;
+            hours[all.iter().position(|a| *a == s.what).unwrap()] += s.end - s.start;
         }
-        DaySummary { day, hours, tally: self.tallies[day - 1].clone() }
+        let names = all.iter().map(|&a| self.name(a).to_string()).collect();
+        DaySummary { day, names, hours, tally: self.tallies[day - 1].clone() }
     }
 
     /// What you were doing on calendar day `day` (1-based) at `hour` o'clock.
-    pub fn doing(&self, day: usize, hour: f64) -> Option<Activity> {
-        self.doing_at((day - 1) as f64 * EARTH_SPIN + hour)
+    pub fn doing(&self, day: usize, hour: f64) -> Option<&str> {
+        self.doing_at((day - 1) as f64 * EARTH_SPIN + hour).map(|a| self.name(a))
     }
 
     fn doing_at(&self, t: f64) -> Option<Activity> {
@@ -183,58 +179,61 @@ impl Journal {
             let row: String = (0..48)
                 .map(|k| {
                     let t = (d - 1) as f64 * EARTH_SPIN + k as f64 * 0.5 + 0.25;
-                    self.doing_at(t).map_or(' ', Activity::glyph)
+                    self.doing_at(t).map_or(' ', |a| self.glyph(a))
                 })
                 .collect();
             let _ = writeln!(out, "day {d:<3} {row}|");
         }
         let legend: Vec<String> =
-            Activity::ALL.iter().map(|a| format!("{} {}", a.glyph(), a.label())).collect();
+            self.activities().iter().map(|&a| format!("{} {}", self.glyph(a), self.name(a))).collect();
         let _ = writeln!(out, "        {}", legend.join("  "));
         out
     }
 
     /// The table, the timeline, and a one-line verdict.
     pub fn report(&self) -> String {
+        let pursuits: Vec<&str> = self.pursuits.iter().map(|p| p.0.as_str()).collect();
+        let mut cols: Vec<String> =
+            ["sleep", "wired", "dreams", &self.signal, "coffee", "work"].map(String::from).to_vec();
+        cols.extend(pursuits.iter().map(|p| p.to_string()));
+        cols.push("wakeups".into());
+        let width = cols.iter().map(|c| c.chars().count()).max().unwrap_or(6).max(6) + 2;
         let mut out = String::from("\nday");
-        for col in ["sleep", "wired", "dreams", "idea", "coffee", "work", "geek", "people", "surf", "wakeups"]
-        {
-            let _ = write!(out, "{col:>8}");
+        for c in &cols {
+            let _ = write!(out, "{c:>width$}");
         }
         out.push('\n');
         for d in 1..=self.days() {
             let s = self.day(d);
-            let h = |a| format!("{:.1}h", s.hours(a));
-            let cells = [
-                h(Activity::Sleep),
-                h(Activity::Wired),
+            let h = |name: &str| format!("{:.1}h", s.hours(name));
+            let mut cells = vec![
+                h("sleep"),
+                h("wired"),
                 s.tally.dreams.to_string(),
-                (if s.tally.idea { "yes" } else { "-" }).to_string(),
+                (if s.tally.signal { "yes" } else { "-" }).to_string(),
                 s.tally.coffee.to_string(),
-                h(Activity::Work),
-                h(Activity::Geek),
-                h(Activity::People),
-                h(Activity::Surf),
-                s.tally.wakeups.to_string(),
+                h("work"),
             ];
+            cells.extend(pursuits.iter().map(|p| h(p)));
+            cells.push(s.tally.wakeups.to_string());
             let _ = write!(out, "{d:>3}");
             for c in cells {
-                let _ = write!(out, "{c:>8}");
+                let _ = write!(out, "{c:>width$}");
             }
             out.push('\n');
         }
-        let _ = writeln!(out, "(each row is a day plus the night after it)");
-        let _ = writeln!(out, "\n{}", self.timeline());
-        let total = |a| (1..=self.days()).map(|d| self.day(d).hours(a)).sum::<f64>();
-        let ideas = self.tallies.iter().filter(|t| t.idea).count();
+        let _ = writeln!(out, "(each row is a day plus the night after it)\n");
+        out.push_str(&self.timeline());
+        let total = |name: &str| (1..=self.days()).map(|d| self.day(d).hours(name)).sum::<f64>();
+        let spent: Vec<String> = pursuits.iter().map(|p| format!("{:.0}h {p}", total(p))).collect();
+        let signals = self.tallies.iter().filter(|t| t.signal).count();
         let _ = writeln!(
             out,
-            "{} spins of the earth: {:.0}h geeking, {:.0}h with people, {:.0}h surfing, {:.0}h asleep, {ideas} idea(s). Last entry {}.",
+            "\n{} spins of the earth: {}, {:.0}h asleep, {signals} {}(s). Last entry {}.",
             self.days(),
-            total(Activity::Geek),
-            total(Activity::People),
-            total(Activity::Surf),
-            total(Activity::Sleep),
+            spent.join(", "),
+            total("sleep"),
+            self.signal,
             self.moments.last().map_or_else(String::new, |m| hhmm(m.at)),
         );
         out
