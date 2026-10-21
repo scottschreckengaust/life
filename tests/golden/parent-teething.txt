@@ -2,14 +2,14 @@
 🌍 parent / teething: a teething week: the baby wakes you at 02:00 three nights running (7 days, instant)
 
 
-day        sleep        wired       dreams  inspiration       coffee         work       guitar         kids      running      wakeups
-  1         7.0h         0.0h            4            -            0         8.0h         0.0h         3.5h         0.0h            1
-  2         6.5h         0.0h            4            -            0         8.0h         0.0h         4.0h         0.0h            1
-  3         7.0h         0.0h            4            -            0         8.0h         0.0h         3.5h         0.0h            1
-  4         8.0h         0.0h            5          yes            0         8.0h         0.0h         2.5h         0.0h            0
-  5         8.5h         0.0h            5          yes            0         8.0h         0.5h         2.5h         0.0h            0
-  6         8.5h         0.0h            5          yes            0         0.0h         0.5h         6.0h         1.5h            0
-  7         8.0h         0.0h            5          yes            0         0.0h         0.5h         6.0h         1.5h            0
+day        sleep        wired       dreams  inspiration       coffee         work         kids       guitar      running      wakeups
+  1         7.0h         0.0h            4            -            0         8.0h         3.5h         0.0h         0.0h            1
+  2         6.5h         0.0h            4            -            0         8.0h         4.0h         0.0h         0.0h            1
+  3         7.0h         0.0h            4            -            0         8.0h         3.5h         0.0h         0.0h            1
+  4         8.0h         0.0h            5          yes            0         8.0h         2.5h         0.0h         0.0h            0
+  5         8.5h         0.0h            5          yes            0         8.0h         2.5h         0.5h         0.0h            0
+  6         8.5h         0.0h            5          yes            0         0.0h         6.0h         0.5h         1.5h            0
+  7         8.0h         0.0h            5          yes            0         0.0h         6.0h         0.5h         1.5h            0
 (each row is a day plus the night after it)
 
         0     3     6     9     12    15    18    21    24
@@ -21,6 +21,6 @@ day 5   zzzzzzzzzzzze....WWWWWWWWeWWWWWWWWGKKKKKe...zzzz|
 day 6   zzzzzzzzzzzzzeRRRGKKKKKK......KKKKKK....e...zzzz|
 day 7   zzzzzzzzzzzzzeRRRGKKKKKK......KKKKKK....e...zzzz|
 day 8   zzzzzzzzzzzz                                    |
-        z sleep  ~ wired  e eat  W work  > travel  . living  G guitar  K kids  R running
+        z sleep  ~ wired  e eat  W work  > travel  . living  K kids  G guitar  R running
 
-7 spins of the earth: 2h guitar, 28h kids, 3h running, 54h asleep, 4 inspiration(s). Last entry d8 06:00.
+7 spins of the earth: 28h kids, 2h guitar, 3h running, 54h asleep, 4 inspiration(s). Last entry d8 06:00.

@@ -2,10 +2,10 @@
 🌍 agent / incident: a 02:00 page, then a request storm that keeps preempting research (3 days, instant)
 
 
-day     sleep     wired    dreams   insight    coffee      work      jobs  research     users   wakeups
-  1      3.0h      0.0h         3       yes         0     12.0h      1.0h      0.0h      1.0h         1
-  2      2.5h      1.5h         2         -         0     12.0h      1.0h      1.0h      2.0h         0
-  3      4.0h      0.0h         4       yes         0     12.0h      1.0h      0.0h      0.0h         0
+day     sleep     wired    dreams   insight    coffee      work     users      jobs  research   wakeups
+  1      3.0h      0.0h         3       yes         0     12.0h      1.0h      1.0h      0.0h         1
+  2      2.5h      1.5h         2         -         0     12.0h      2.0h      1.0h      1.0h         0
+  3      4.0h      0.0h         4       yes         0     12.0h      0.0h      1.0h      0.0h         0
 (each row is a day plus the night after it)
 
         0     3     6     9     12    15    18    21    24
@@ -13,6 +13,6 @@ day 1            .WWWWWWWWWWWWWWWWWWWWWWWWJJ..........e.|
 day 2   .zzzUUzzz.WWWWWWWWWWWWWWWWWWWWWWWWJJRUURUU....e.|
 day 3   .~~~zzzzz.WWWWWWWWWWWWWWWWWWWWWWWWJJ..........e.|
 day 4   .zzzzzzzz                                       |
-        z sleep  ~ wired  e eat  W work  > travel  . living  J jobs  R research  U users
+        z sleep  ~ wired  e eat  W work  > travel  . living  U users  J jobs  R research
 
-3 spins of the earth: 3h jobs, 1h research, 3h users, 10h asleep, 2 insight(s). Last entry d4 04:30.
+3 spins of the earth: 3h users, 3h jobs, 1h research, 10h asleep, 2 insight(s). Last entry d4 04:30.
