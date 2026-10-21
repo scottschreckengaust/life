@@ -195,6 +195,7 @@ src/macros.rs    select! and join!
 src/alarm.rs     ALARM: AtomicBool + why it rang, with the orderings explained
 src/journal.rs   what happened: spans, diary, totals, timeline
 src/main.rs      the CLI
+CHANGELOG.md     every release, written by release-plz from PR titles
 presets/         scott (the motto), parent, agent
 examples/motto.rs   the motto, verbatim
 ```
@@ -219,43 +220,69 @@ its own provenance, and the release workflow proves it is byte-for-byte the file
 
 ## Releasing
 
-Bump `version` in `Cargo.toml` and merge to `main`. [`release.yml`](.github/workflows/release.yml) does the rest,
-and each stage has to pass before the next one starts:
+Nobody bumps versions by hand. Releases come from the PR titles:
+
+1. **Title PRs as [Conventional Commits](https://www.conventionalcommits.org/)** (`feat: …`, `fix: …`,
+   `docs: …`, `feat!: …` for breaking changes). PRs are squash-merged, so the title becomes the commit, and
+   the `pr-title` check enforces it.
+2. **release-plz keeps one release PR open** ([`release-plz.yml`](.github/workflows/release-plz.yml)). Every
+   merge to `main` updates it: the next version (from the commits, plus `cargo-semver-checks` on the public
+   API) and the new `CHANGELOG.md` section. Only `feat`, `fix` and breaking changes open one; `docs`, `ci`,
+   `chore` and the like ride along in the next release.
+3. **Merging the release PR cuts the release.** Merge it yourself whenever you like, or let
+   [`release-cut.yml`](.github/workflows/release-cut.yml) merge it once it has sat unchanged for **6 hours** with
+   green checks, so a burst of merges becomes one release. To release right now, run release-cut with
+   `quiet_hours = 0`.
+4. **[`release.yml`](.github/workflows/release.yml) ships it**, each stage gating the next:
 
 | stage | what it proves |
 |---|---|
-| **plan** | the version is new: not tagged, not on crates.io |
-| **draft** | a *draft* GitHub Release, pinned to that commit (no tag yet, nothing public) |
+| **plan** | the version has no published GitHub Release yet (a half-finished run is resumed, not skipped) |
+| **draft** | tag `vX.Y.Z` at the release commit, then a *draft* release on it, with the `CHANGELOG.md` section as its notes |
 | **build** | static (musl) binaries for Linux x86_64 and arm64, plus macOS arm64 and Windows, each with a `.sha256` and provenance, uploaded to the draft |
 | **crate** | the `.crate` crates.io will get, with a `.sha256` and provenance, uploaded to the draft |
 | **test** | on each OS, the draft's *downloaded* assets pass checksum and provenance checks, then the smoke test and the golden outputs in `tests/golden` |
-| **publish** | `cargo publish` via trusted publishing, after checking that the bytes about to be uploaded are the attested ones |
+| **publish** | `cargo publish` via trusted publishing, after checking that the bytes about to be uploaded are the attested ones (skipped if that version is already on crates.io) |
 | **verify** | the crates.io index checksum and the served `.crate` match the attested bytes, provenance verifies on that file, and `cargo install` from crates.io runs |
-| **release** | the draft flips to published, and the tag is created at the drafted commit |
+| **release** | the draft flips to published, then release-plz runs again for anything merged in the meantime |
 
-Push to any `release/**` branch to run the whole pipeline as a **rehearsal**: a throwaway prerelease draft,
-`cargo publish --dry-run`, and the draft is deleted at the end.
+**Merging during a release is fine.** Every stage builds from the release commit, and its tag exists from the
+start, so later merges can't get into the release or break it. They simply go into the next release PR.
+
+**Re-running is safe.** "Re-run all jobs" picks up where a failed run stopped: the tag, the draft and a
+crates.io upload are reused, never duplicated.
+
+**Rehearsals:** push to any `release/**` branch to run the whole pipeline without releasing. It creates a real
+`rehearsal/…` tag (proving tag creation works), a throwaway prerelease draft and `cargo publish --dry-run`, then
+deletes the tag and draft.
 
 It's assembled from off-the-shelf actions, pinned to commit SHAs:
-[`softprops/action-gh-release`](https://github.com/softprops/action-gh-release) (draft, upload, publish),
+[`release-plz`](https://github.com/release-plz/action) (release PR, version, changelog),
+[`amannn/action-semantic-pull-request`](https://github.com/amannn/action-semantic-pull-request) (PR titles),
+[`softprops/action-gh-release`](https://github.com/softprops/action-gh-release) (draft, publish),
 [`taiki-e/upload-rust-binary-action`](https://github.com/taiki-e/upload-rust-binary-action) (cross-platform build,
 archive, checksums), [`actions/attest`](https://github.com/actions/attest) (provenance),
-[`rust-lang/crates-io-auth-action`](https://github.com/rust-lang/crates-io-auth-action) (trusted publishing) and
-the `gh` CLI (verification).
+[`rust-lang/crates-io-auth-action`](https://github.com/rust-lang/crates-io-auth-action) (trusted publishing),
+[`actions/create-github-app-token`](https://github.com/actions/create-github-app-token) and the `gh` CLI.
 
 ### One-time setup
 
-1. **First publish.** crates.io only allows trusted publishing for a crate that already exists. On crates.io,
-   create an API token with the `publish-new` scope, and add it as a secret named `CARGO_REGISTRY_TOKEN` to a
-   GitHub environment named `release` (Settings → Environments). The pipeline uses it only when trusted
-   publishing isn't set up yet.
-2. **Trusted publishing.** After the first release, open the crate's Settings → Trusted Publishing on crates.io
-   and add GitHub: owner `scottschreckengaust`, repository `life`, workflow `release.yml`, environment `release`.
-   Then delete the `CARGO_REGISTRY_TOKEN` secret and revoke the token.
-3. **Optional, recommended:** require a reviewer on the `release` environment (a human presses go before
-   anything reaches crates.io), and turn on immutable releases (Settings → General) so published assets and tags
-   can't be changed. The pipeline already uploads everything while the release is a draft, which is what
-   immutable releases require.
+1. **crates.io trusted publishing** (done): owner `scottschreckengaust`, repository `life`, workflow
+   `release.yml`, environment `release`. Delete any `CARGO_REGISTRY_TOKEN` secret and revoke the token.
+2. **A credential for release-plz.** PRs opened and merges made with the default `GITHUB_TOKEN` don't run CI or
+   start `release.yml`, so the release PR needs its own identity. Either:
+   - **a GitHub App** (recommended: short-lived tokens). Create one under Settings → Developer settings → GitHub
+     Apps with repository permissions *Contents: read and write* and *Pull requests: read and write*, no webhook,
+     and install it on this repository only. Save its Client ID as the variable `RELEASE_APP_CLIENT_ID` and a
+     private key as the secret `RELEASE_APP_PRIVATE_KEY` (Settings → Secrets and variables → Actions); or
+   - **a fine-grained personal access token** for this repository only, with the same two permissions, saved as
+     the secret `RELEASE_PLZ_TOKEN`.
+
+   Until one exists, release-plz and release-cut skip with a notice.
+3. **Lock what's released:** turn on *immutable releases* (Settings → General → Releases), and add a tag ruleset
+   for `v*` (Settings → Rules → Rulesets → New tag ruleset) that restricts **updates** and **deletions**. Leave
+   creations allowed: the pipeline creates the tag. Rehearsal tags (`rehearsal/…`) are outside `v*`, so they can
+   still clean up.
 
 ## For a GitHub profile
 
