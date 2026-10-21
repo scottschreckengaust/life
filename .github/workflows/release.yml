@@ -105,6 +105,10 @@ jobs:
     needs: plan
     if: needs.plan.outputs.go == 'true'
     runs-on: ubuntu-latest
+    # Real releases run in `release`, the only environment holding the release-tagger App's
+    # key (and the one crates.io trusts); it only deploys from main and v* tags. Rehearsals
+    # get no environment: they tag rehearsal/... with the built-in token.
+    environment: ${{ needs.plan.outputs.rehearsal != 'true' && 'release' || '' }}
     permissions:
       contents: write
     steps:
@@ -113,9 +117,17 @@ jobs:
           persist-credentials: false
           sparse-checkout: CHANGELOG.md
           sparse-checkout-cone-mode: false
+      - id: tagger
+        if: needs.plan.outputs.rehearsal != 'true'
+        name: release-tagger token (the only identity allowed to create v* tags)
+        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
+        with:
+          client-id: ${{ vars.TAGGER_CLIENT_ID }}
+          private-key: ${{ secrets.TAGGER_PRIVATE_KEY }}
+          permission-contents: write
       - name: tag this commit
         env:
-          GH_TOKEN: ${{ github.token }}
+          GH_TOKEN: ${{ steps.tagger.outputs.token || github.token }}
           TAG: ${{ needs.plan.outputs.tag }}
         run: |
           if sha=$(gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$TAG" -q .object.sha 2>/dev/null); then
@@ -322,9 +334,9 @@ jobs:
   publish:
     needs: [plan, crate, test]
     runs-on: ubuntu-latest
-    # Must match the environment on crates.io's trusted publisher. Rehearsals use their own,
-    # so required reviewers on `release` never block them.
-    environment: ${{ needs.plan.outputs.rehearsal == 'true' && 'rehearsal' || 'release' }}
+    # Must match the environment on crates.io's trusted publisher. Rehearsals only dry-run,
+    # so they need no environment (and required reviewers on `release` never block them).
+    environment: ${{ needs.plan.outputs.rehearsal != 'true' && 'release' || '' }}
     permissions:
       contents: read
       id-token: write # trusted publishing: GitHub OIDC token -> short-lived crates.io token

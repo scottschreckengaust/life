@@ -275,14 +275,22 @@ and the `gh` CLI. Everything runs as `github-actions[bot]`.
 1. **crates.io trusted publishing** (done): owner `scottschreckengaust`, repository `life`, workflow
    `release.yml`, environment `release`. Delete any `CARGO_REGISTRY_TOKEN` secret and revoke the token.
 2. **Let the bot open PRs:** Settings → Actions → General → Workflow permissions → tick *Allow GitHub Actions
-   to create and approve pull requests*. Everything runs as `github-actions[bot]` with the built-in token; no
-   App or personal token. Pushes and PRs made with that token don't start workflows by themselves, so
+   to create and approve pull requests*. Everything except creating the `v*` tag runs as `github-actions[bot]`
+   with the built-in token. Pushes and PRs made with that token don't start workflows by themselves, so
    release-plz starts CI on its PR, and release-cut tags the merge commit and starts `release.yml` on that tag.
-   If the `release` environment limits deployment branches, also allow tags matching `v*`.
-3. **Lock what's released:** turn on *immutable releases* (Settings → General → Releases), and add a tag ruleset
-   for `v*` (Settings → Rules → Rulesets → New tag ruleset) that restricts **updates** and **deletions**. Leave
-   creations allowed: the pipeline creates the tag. Rehearsal tags (`rehearsal/…`) are outside `v*`, so they can
-   still clean up.
+3. **The `release` environment** (Settings → Environments → `release`): deployments only from branch `main` and
+   tags `v*`. It is the one place both powers live: crates.io only trusts jobs in `release`, and it holds the
+   release-tagger App's key. Rehearsals use no environment, so they can't reach either.
+4. **The release-tagger App**, the only identity allowed to create `v*` tags. A GitHub App with no webhook and
+   one permission, *Contents: read and write*, installed on this repository only. Its Client ID is the
+   `release` environment variable `TAGGER_CLIENT_ID`, and a private key is the environment secret
+   `TAGGER_PRIVATE_KEY`. The workflows mint a one-hour token from it only to create the tag; everything else is
+   `github-actions[bot]`. Check the wiring any time: run *release-cut* from `main` with **check_tagger** ticked.
+5. **Lock what's released:**
+   - *Immutable releases* (Settings → General → Releases): published assets and tags can't change.
+   - Tag ruleset **release tag creation**: `v*`, *Restrict creations*, bypass: the release-tagger App.
+   - Tag ruleset **release tags**: `v*`, *Restrict updates* and *Restrict deletions*, bypass: Repository admin
+     (so an admin can remove a stray tag). Rehearsal tags (`rehearsal/…`) are outside `v*`.
 
 ## For a GitHub profile
 
