@@ -24,7 +24,13 @@ name = "spin_life"
 name = "spin-life"
 path = "src/main.rs"
 
+# cargo binstall spin-life: download the release asset instead of compiling.
+# Names match taiki-e/upload-rust-binary-action's defaults ($bin-$target).
 [package.metadata.binstall]
-pkg-url = "{ repo }/releases/download/v{ version }/{ name }-{ target }{ archive-suffix }"
+pkg-url = "{ repo }/releases/download/v{ version }/{ name }-{ target }.tar.gz"
 pkg-fmt = "tgz"
 bin-dir = "{ bin }{ binary-ext }"
+
+[package.metadata.binstall.overrides.x86_64-pc-windows-msvc]
+pkg-url = "{ repo }/releases/download/v{ version }/{ name }-{ target }.zip"
+pkg-fmt = "zip"

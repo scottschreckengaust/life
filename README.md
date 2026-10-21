@@ -199,20 +199,63 @@ presets/         scott (the motto), parent, agent
 examples/motto.rs   the motto, verbatim
 ```
 
+## Verify what you download
+
+Every release asset comes with a `.sha256` file and **signed build provenance**: a
+[GitHub artifact attestation](https://docs.github.com/en/actions/how-tos/secure-your-work/use-artifact-attestations/use-artifact-attestations)
+(Sigstore-signed, SLSA provenance) that ties the file to this repository, the release workflow and the exact
+commit it was built from.
+
+```sh
+gh release download v0.2.0 -R scottschreckengaust/life -p 'spin-life-x86_64-unknown-linux-gnu.*'
+sha256sum -c spin-life-x86_64-unknown-linux-gnu.sha256
+gh attestation verify spin-life-x86_64-unknown-linux-gnu.tar.gz -R scottschreckengaust/life
+```
+
+For the crate itself, Cargo already checks integrity for you: the crates.io index records each version's SHA-256,
+Cargo verifies every download against it, and `Cargo.lock` pins it. The release also attaches the `.crate` with
+its own provenance, and the release workflow proves it is byte-for-byte the file crates.io serves, so you can run
+`gh attestation verify` on a `.crate` downloaded from crates.io too.
+
 ## Releasing
 
-`release.yml` publishes to crates.io with [trusted publishing](https://crates.io/docs/trusted-publishing): no API
-token is stored in the repo. GitHub mints a short-lived OIDC token, crates.io trades it for a publish token, and
-that token is revoked when the job ends.
+Bump `version` in `Cargo.toml` and merge to `main`. [`release.yml`](.github/workflows/release.yml) does the rest,
+and each stage has to pass before the next one starts:
 
-1. **First release, by hand** (crates.io requires the crate to exist): `cargo login`, then `cargo publish`.
-2. **On crates.io**: open the crate's Settings, find Trusted Publishing, and add GitHub with owner
-   `scottschreckengaust`, repository `life`, workflow `release.yml`, environment `release`.
-3. **On GitHub**: Settings → Environments → create `release` (optionally limited to `v*` tags, or requiring a
-   reviewer).
-4. **Every release after that**: bump `version` in `Cargo.toml`, then `git tag v0.2.1 && git push --tags`. The
-   workflow tests, publishes, creates the GitHub Release and attaches binaries for Linux (x86_64, arm64), macOS
-   (arm64) and Windows.
+| stage | what it proves |
+|---|---|
+| **plan** | the version is new: not tagged, not on crates.io |
+| **draft** | a *draft* GitHub Release, pinned to that commit (no tag yet, nothing public) |
+| **build** | binaries for Linux x86_64 and arm64, macOS arm64 and Windows, each with a `.sha256` and provenance, uploaded to the draft |
+| **crate** | the `.crate` crates.io will get, with a `.sha256` and provenance, uploaded to the draft |
+| **test** | on each OS, the draft's *downloaded* assets pass checksum and provenance checks, then the smoke test and the golden outputs in `tests/golden` |
+| **publish** | `cargo publish` via trusted publishing, after checking that the bytes about to be uploaded are the attested ones |
+| **verify** | the crates.io index checksum and the served `.crate` match the attested bytes, provenance verifies on that file, and `cargo install` from crates.io runs |
+| **release** | the draft flips to published, and the tag is created at the drafted commit |
+
+Push to any `release/**` branch to run the whole pipeline as a **rehearsal**: a throwaway prerelease draft,
+`cargo publish --dry-run`, and the draft is deleted at the end.
+
+It's assembled from off-the-shelf actions, pinned to commit SHAs:
+[`softprops/action-gh-release`](https://github.com/softprops/action-gh-release) (draft, upload, publish),
+[`taiki-e/upload-rust-binary-action`](https://github.com/taiki-e/upload-rust-binary-action) (cross-platform build,
+archive, checksums), [`actions/attest`](https://github.com/actions/attest) (provenance),
+[`rust-lang/crates-io-auth-action`](https://github.com/rust-lang/crates-io-auth-action) (trusted publishing) and
+the `gh` CLI (verification).
+
+### One-time setup
+
+1. **First publish.** crates.io only allows trusted publishing for a crate that already exists. On crates.io,
+   create an API token with the `publish-new` scope, and add it as a secret named `CARGO_REGISTRY_TOKEN` to a
+   GitHub environment named `release` (Settings → Environments). The pipeline uses it only when trusted
+   publishing isn't set up yet.
+2. **Trusted publishing.** After the first release, open the crate's Settings → Trusted Publishing on crates.io
+   and add GitHub: owner `scottschreckengaust`, repository `life`, workflow `release.yml`, environment `release`.
+   Then delete the `CARGO_REGISTRY_TOKEN` secret and revoke the token.
+3. **Optional, recommended:** require a reviewer on the `release` environment (a human presses go before
+   anything reaches crates.io), and turn on immutable releases (Settings → General) so published assets and tags
+   can't be changed. The pipeline already uploads everything while the release is a draft, which is what
+   immutable releases require.
 
 ## For a GitHub profile
 

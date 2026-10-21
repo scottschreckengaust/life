@@ -5,24 +5,49 @@ on:
     branches: [main]
   pull_request:
 
+permissions:
+  contents: read
+
 jobs:
   test:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # master
+        with:
+          toolchain: stable
           components: rustfmt, clippy
       - run: cargo fmt --check
       - run: cargo clippy --all-targets -- -D warnings
-      - run: cargo test
-      - run: cargo run --release -- chaos --instant --quiet
+      - run: cargo test --locked
       - run: for f in presets/*.toml; do cargo run -q --release -- check "$f"; done
       - run: cargo package --locked
+      - name: cargo package is reproducible (the release workflow relies on it)
+        run: |
+          a=$(sha256sum target/package/*.crate | cut -d' ' -f1)
+          rm -rf target/package && touch src/*.rs && cargo package --locked -q
+          b=$(sha256sum target/package/*.crate | cut -d' ' -f1)
+          echo "$a"; echo "$b"; [ "$a" = "$b" ]
 
   msrv:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@1.70
-      - run: cargo test
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # master
+        with:
+          toolchain: "1.70"
+      - run: cargo test --locked
+
+  actionlint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: docker://rhysd/actionlint:1.7.12
+        with:
+          args: -color

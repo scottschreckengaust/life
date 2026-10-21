@@ -1,0 +1,26 @@
+“If not geeking out: try being with people, catch surfing: finally living, eating, sleeping.”
+🌍 scott / chaos: a week where everything happens (7 days, instant)
+
+
+day    sleep    wired   dreams     idea   coffee     work     geek   people     surf  wakeups
+  1     8.0h     0.0h        5      yes        1     7.0h     0.0h     2.0h     0.0h        0
+  2     7.0h     1.0h        4        -        2    11.0h     0.0h     0.0h     0.0h        0
+  3     3.0h     0.0h        2        -        0     7.0h     5.0h     1.0h     0.0h        0
+  4     7.0h     0.0h        4        -        0     7.0h     0.0h     1.0h     0.0h        1
+  5     9.5h     0.0h        6      yes        0     7.0h     1.5h     0.0h     2.0h        0
+  6     8.0h     0.0h        5      yes        0     0.0h     2.0h     3.0h     2.0h        1
+  7     7.5h     0.0h        5      yes        0     0.0h     4.0h     1.5h     2.0h        0
+(each row is a day plus the night after it)
+
+        0     3     6     9     12    15    18    21    24
+day 1                e....WWWWWWeeWWWWWWWW..PPPPee...zzz|
+day 2   zzzzzzzzzzzzze....WWWWWWeeWWWWWWWWWWWWWWWWee.~~z|
+day 3   zzzzzzzzzzzzze....WWWWWWeeWWWWWWWWGGGGPPee...GGG|
+day 4   GGGzzzzzze.>>>>>>>WWWWWWeeWWWWWWWW......ee...zzz|
+day 5   zzPPzzzzzzzzze....WWWWWWeeWWWWWWWWGGGSSSSee..zzz|
+day 6   zzzzzzzzzzzzzzzzeGGGG...PPPPPP........ee......zz|
+day 7   zzzzzzzzzzzzzzSSSSeGGGGGGGGPPP..SSSS..ee......zz|
+day 8   zzzzzzzzzzzzz                                   |
+        z sleep  ~ wired  e eat  W work  > travel  . living  G geek  P people  S surf
+
+7 spins of the earth: 12h geek, 8h people, 6h surf, 50h asleep, 4 idea(s). Last entry d8 06:30.
