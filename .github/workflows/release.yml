@@ -2,8 +2,10 @@ name: release
 
 # A version bump on main becomes a release, one gate at a time:
 #
-#   plan     Is Cargo.toml's version new? (not tagged, not on crates.io)
-#   draft    A DRAFT GitHub Release pinned to this exact commit. No tag exists yet.
+#   plan     Is Cargo.toml's version unreleased? (no *published* GitHub Release for it)
+#   draft    Tag this exact commit, then a DRAFT GitHub Release on that tag, with the
+#            CHANGELOG.md section as its notes. Tagging first means later merges to main
+#            can't affect this release.
 #   build    Binaries for 4 targets (static on Linux), each with a .sha256 and signed build provenance,
 #            uploaded to the draft.
 #   crate    The .crate file crates.io will receive, with a .sha256 and provenance.
@@ -14,10 +16,14 @@ name: release
 #   verify   crates.io's index checksum and served .crate match the attested bytes,
 #            provenance verifies on the downloaded file, and `cargo install` from
 #            crates.io runs.
-#   release  Flip the draft to published. The tag is created now, at the drafted commit.
+#   release  Flip the draft to published, then start release-plz so merges that landed
+#            during this release get their release PR.
 #
-# On a release/** branch the same pipeline runs as a rehearsal: a throwaway prerelease
-# draft, `cargo publish --dry-run`, no crates.io checks, and the draft is deleted at the end.
+# Every stage is safe to re-run: a version already on crates.io isn't published twice.
+#
+# On a release/** branch the same pipeline runs as a rehearsal: a real `rehearsal/...` tag
+# (proving tag creation works), a throwaway prerelease draft, `cargo publish --dry-run`, no
+# crates.io checks, and the tag and draft are deleted at the end.
 #
 # Actions are pinned to full commit SHAs; the comment names the release.
 
@@ -44,6 +50,7 @@ jobs:
       contents: read
     outputs:
       go: ${{ steps.plan.outputs.go }}
+      published: ${{ steps.plan.outputs.published }}
       name: ${{ steps.plan.outputs.name }}
       version: ${{ steps.plan.outputs.version }}
       tag: ${{ steps.plan.outputs.tag }}
@@ -57,24 +64,33 @@ jobs:
           REF: ${{ github.ref }}
           RUN: ${{ github.run_number }}
           ATTEMPT: ${{ github.run_attempt }}
+          GH_TOKEN: ${{ github.token }}
         run: |
           meta=$(cargo metadata --no-deps --format-version 1)
           name=$(jq -r '.packages[0].name' <<<"$meta")
           version=$(jq -r '.packages[0].version' <<<"$meta")
           rehearsal=false; [[ "$REF" == refs/heads/main ]] || rehearsal=true
-          if $rehearsal; then tag="v$version-rehearsal.$RUN.$ATTEMPT"; else tag="v$version"; fi
+          # Rehearsal tags live outside v* so the rule protecting v* tags doesn't stop cleanup.
+          if $rehearsal; then tag="rehearsal/$version.$RUN.$ATTEMPT"; else tag="v$version"; fi
           go=true
-          if git ls-remote --exit-code --tags origin "refs/tags/v$version" >/dev/null; then
-            echo "::notice::v$version is already tagged"
-            $rehearsal || go=false
+          # Done means a *published* release. A tag, draft, or crates.io upload left by a
+          # failed run is resumed instead (drafts aren't visible to this read-only token).
+          if ! $rehearsal && [[ "$(gh release view "$tag" -R "$GITHUB_REPOSITORY" --json isDraft -q .isDraft 2>/dev/null)" == false ]]; then
+            echo "::notice::$tag is already released"
+            go=false
+          fi
+          if ! $rehearsal && sha=$(git ls-remote --exit-code --tags origin "refs/tags/$tag" | cut -f1) && [[ "$sha" != "$GITHUB_SHA" ]]; then
+            echo "::warning::$tag already points at $sha, not $GITHUB_SHA; bump the version"
+            go=false
           fi
           index="https://index.crates.io/${name:0:2}/${name:2:2}/$name"
+          published=false
           if curl -fsS "$index" 2>/dev/null | jq -e --arg v "$version" 'select(.vers == $v)' >/dev/null; then
-            echo "::notice::$name $version is already on crates.io"
-            $rehearsal || go=false
+            published=true
+            echo "::notice::$name $version is already on crates.io; publish will be skipped"
           fi
-          $go || echo "::notice::nothing to release: bump the version in Cargo.toml to cut one"
-          { echo "go=$go"; echo "name=$name"; echo "version=$version"; echo "tag=$tag"; echo "rehearsal=$rehearsal"; } >>"$GITHUB_OUTPUT"
+          $go || echo "::notice::nothing to release: the next release PR will bump the version"
+          { echo "go=$go"; echo "published=$published"; echo "name=$name"; echo "version=$version"; echo "tag=$tag"; echo "rehearsal=$rehearsal"; } >>"$GITHUB_OUTPUT"
           echo "### $tag (rehearsal: $rehearsal, go: $go)" >>"$GITHUB_STEP_SUMMARY"
 
   draft:
@@ -84,36 +100,65 @@ jobs:
     permissions:
       contents: write
     steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          sparse-checkout: CHANGELOG.md
+          sparse-checkout-cone-mode: false
+      - name: tag this commit
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.plan.outputs.tag }}
+        run: |
+          if sha=$(gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$TAG" -q .object.sha 2>/dev/null); then
+            [[ "$sha" == "$GITHUB_SHA" ]] || { echo "::error::$TAG exists at $sha, not $GITHUB_SHA"; exit 1; }
+            echo "$TAG already points here (resuming)"
+          else
+            gh api "repos/$GITHUB_REPOSITORY/git/refs" -f ref="refs/tags/$TAG" -f sha="$GITHUB_SHA" -q .ref
+          fi
+      - name: release notes from CHANGELOG.md
+        env:
+          NAME: ${{ needs.plan.outputs.name }}
+          VERSION: ${{ needs.plan.outputs.version }}
+          TAG: ${{ needs.plan.outputs.tag }}
+        run: |
+          awk -v v="$VERSION" '
+            /^## \[/ { if (on) exit; if (index($0, "## [" v "]") == 1) { on = 1; next } }
+            on' CHANGELOG.md > notes.md
+          [[ -s notes.md ]] || echo "_No CHANGELOG.md entry for $VERSION._" > notes.md
+          asset="$NAME-x86_64-unknown-linux-musl"
+          cat >> notes.md <<NOTES
+
+          ## Install
+
+          \`\`\`sh
+          cargo install $NAME --version $VERSION --locked
+          cargo binstall $NAME@$VERSION   # prebuilt
+          \`\`\`
+
+          ## Verify a download
+
+          Every asset has a \`.sha256\` file and signed build provenance (Sigstore, via GitHub
+          artifact attestations) tying it to this repository, the release workflow and commit
+          $GITHUB_SHA.
+
+          \`\`\`sh
+          gh release download $TAG -R $GITHUB_REPOSITORY -p '$asset.*'
+          sha256sum -c $asset.sha256
+          gh attestation verify $asset.tar.gz -R $GITHUB_REPOSITORY
+          \`\`\`
+
+          The \`.crate\` attached here is byte-for-byte the file on crates.io; the release
+          workflow checked that before publishing this page.
+          NOTES
+          cat notes.md
       - uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64 # v3.0.3
         with:
           tag_name: ${{ needs.plan.outputs.tag }}
-          target_commitish: ${{ github.sha }}
           name: ${{ needs.plan.outputs.name }} ${{ needs.plan.outputs.tag }}
           draft: true
           prerelease: ${{ needs.plan.outputs.rehearsal }}
-          generate_release_notes: true
-          body: |
-            ## Install
-
-            ```sh
-            cargo install ${{ needs.plan.outputs.name }} --version ${{ needs.plan.outputs.version }} --locked
-            cargo binstall ${{ needs.plan.outputs.name }}@${{ needs.plan.outputs.version }}   # prebuilt
-            ```
-
-            ## Verify a download
-
-            Every asset has a `.sha256` file and signed build provenance (Sigstore, via GitHub
-            artifact attestations) tying it to this repository, this workflow and commit
-            ${{ github.sha }}.
-
-            ```sh
-            gh release download ${{ needs.plan.outputs.tag }} -R ${{ github.repository }} -p '${{ needs.plan.outputs.name }}-x86_64-unknown-linux-musl.*'
-            sha256sum -c ${{ needs.plan.outputs.name }}-x86_64-unknown-linux-musl.sha256
-            gh attestation verify ${{ needs.plan.outputs.name }}-x86_64-unknown-linux-musl.tar.gz -R ${{ github.repository }}
-            ```
-
-            The `.crate` attached here is byte-for-byte the file on crates.io; the release
-            workflow checked that before publishing this page.
+          body_path: notes.md
 
   build:
     needs: [plan, draft]
@@ -291,16 +336,19 @@ jobs:
           got=$(sha256sum "target/package/$FILE" | cut -d' ' -f1)
           echo "attested $WANT"; echo "packaged $got"
           [[ "$got" == "$WANT" ]] || { echo "::error::cargo package is not reproducible here; refusing to publish"; exit 1; }
+      - name: already on crates.io (resuming)
+        if: needs.plan.outputs.rehearsal != 'true' && needs.plan.outputs.published == 'true'
+        run: echo "::notice::${{ needs.plan.outputs.version }} is already on crates.io; verifying it instead of publishing again"
       - name: rehearsal (dry run)
         if: needs.plan.outputs.rehearsal == 'true'
         run: cargo publish --locked --dry-run
       - name: trusted publishing
         id: auth
-        if: needs.plan.outputs.rehearsal != 'true'
+        if: needs.plan.outputs.rehearsal != 'true' && needs.plan.outputs.published != 'true'
         continue-on-error: true # the very first release uses CARGO_REGISTRY_TOKEN instead
         uses: rust-lang/crates-io-auth-action@c6f97d42243bad5fab37ca0427f495c86d5b1a18 # v1.0.5
       - name: cargo publish
-        if: needs.plan.outputs.rehearsal != 'true'
+        if: needs.plan.outputs.rehearsal != 'true' && needs.plan.outputs.published != 'true'
         env:
           CARGO_REGISTRY_TOKEN: ${{ steps.auth.outputs.token || secrets.CARGO_REGISTRY_TOKEN }}
         run: |
@@ -373,20 +421,26 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
+      actions: write # start release-plz afterwards
+    env:
+      GH_TOKEN: ${{ github.token }}
+      TAG: ${{ needs.plan.outputs.tag }}
     steps:
       - name: publish the release
         if: needs.plan.outputs.rehearsal != 'true'
         uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64 # v3.0.3
         with:
           tag_name: ${{ needs.plan.outputs.tag }}
-          target_commitish: ${{ github.sha }}
           draft: false
           make_latest: true
-      - name: rehearsal over, delete its draft (and any left by failed rehearsals)
+      - name: start release-plz for anything merged while this ran
+        if: needs.plan.outputs.rehearsal != 'true'
+        run: gh workflow run release-plz.yml -R "$GITHUB_REPOSITORY" --ref main
+      - name: rehearsal over, delete its tag and draft (and any left by failed rehearsals)
         if: needs.plan.outputs.rehearsal == 'true'
-        env:
-          GH_TOKEN: ${{ github.token }}
         run: |
           gh release list -R "$GITHUB_REPOSITORY" --limit 100 --json tagName,isDraft \
-            --jq '.[] | select(.isDraft and (.tagName | contains("-rehearsal."))) | .tagName' |
-            while read -r tag; do gh release delete "$tag" -R "$GITHUB_REPOSITORY" --yes; echo "deleted $tag"; done
+            --jq '.[] | select(.isDraft and (.tagName | startswith("rehearsal/"))) | .tagName' |
+            while read -r tag; do gh release delete "$tag" -R "$GITHUB_REPOSITORY" --yes; echo "deleted draft $tag"; done
+          gh api "repos/$GITHUB_REPOSITORY/git/matching-refs/tags/rehearsal/" -q '.[].ref' |
+            while read -r ref; do gh api -X DELETE "repos/$GITHUB_REPOSITORY/git/$ref"; echo "deleted $ref"; done

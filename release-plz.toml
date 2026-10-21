@@ -1,0 +1,13 @@
+# release-plz only prepares the release PR (version bump + CHANGELOG.md).
+# .github/workflows/release.yml does everything else: build, attest, test, publish, tag.
+# See README > Releasing.
+
+[workspace]
+# Releases come from features, fixes and breaking changes. docs/ci/chore/refactor/test
+# commits ride along in the next release instead of opening one.
+release_commits = "^(feat|fix)[(:!]|^[a-z]+(\\(.+\\))?!:"
+# Never tag, publish or create GitHub releases from release-plz: release.yml owns those.
+git_tag_enable = false
+git_release_enable = false
+publish = false
+pr_labels = ["release"]
