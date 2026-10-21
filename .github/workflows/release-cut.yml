@@ -42,13 +42,16 @@ jobs:
           quiet=$(( ($(date +%s) - $(date -d "$changed" +%s)) / 60 ))
           echo "::notice::release PR #$number last changed $changed ($quiet min ago)"
           (( quiet >= QUIET_HOURS * 60 )) || { echo "::notice::not quiet for ${QUIET_HOURS}h yet"; exit 0; }
-          view=$(gh pr view "$number" -R "$REPO" --json mergeable,statusCheckRollup)
-          mergeable=$(jq -r .mergeable <<<"$view")
+          mergeable=$(gh pr view "$number" -R "$REPO" --json mergeable -q .mergeable)
           [[ "$mergeable" == MERGEABLE ]] || { echo "::warning::release PR #$number isn't mergeable ($mergeable)"; exit 0; }
-          total=$(jq '.statusCheckRollup | length' <<<"$view")
-          bad=$(jq '[.statusCheckRollup[] | (.conclusion // .state // "") | select(IN("SUCCESS","SKIPPED","NEUTRAL") | not)] | length' <<<"$view")
+          # Read the head commit's check runs directly: the PR's status rollup leaves out the CI
+          # that release-plz dispatches (bot-made PRs don't trigger CI on their own).
+          runs=$(gh api "repos/$REPO/commits/$head/check-runs?per_page=100" \
+            --jq '[.check_runs[] | {name, status, conclusion}]')
+          total=$(jq length <<<"$runs")
+          bad=$(jq '[.[] | select(.status != "completed" or (.conclusion | IN("success","skipped","neutral") | not))] | length' <<<"$runs")
           if ! (( total > 0 && bad == 0 )); then
-            echo "::notice::checks not green yet ($bad of $total pending or failing): $(jq -c '[.statusCheckRollup[] | {name: (.name // .context), status: (.conclusion // .state // .status)}]' <<<"$view")"
+            echo "::notice::checks not green yet ($bad of $total pending or failing): $(jq -c . <<<"$runs")"
             exit 0
           fi
 
