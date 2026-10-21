@@ -36,17 +36,21 @@ jobs:
         run: |
           pr=$(gh pr list -R "$REPO" --state open --base main --json number,headRefName,headRefOid \
             --jq '[.[] | select(.headRefName | startswith("release-plz-"))] | first // empty')
-          [[ -n "$pr" ]] || { echo "no release PR open"; exit 0; }
+          [[ -n "$pr" ]] || { echo "::notice::no release PR open"; exit 0; }
           number=$(jq -r .number <<<"$pr"); head=$(jq -r .headRefOid <<<"$pr")
           changed=$(gh api "repos/$REPO/commits/$head" --jq .commit.committer.date)
           quiet=$(( ($(date +%s) - $(date -d "$changed" +%s)) / 60 ))
-          echo "release PR #$number last changed $changed ($quiet min ago)"
-          (( quiet >= QUIET_HOURS * 60 )) || { echo "not quiet for ${QUIET_HOURS}h yet"; exit 0; }
+          echo "::notice::release PR #$number last changed $changed ($quiet min ago)"
+          (( quiet >= QUIET_HOURS * 60 )) || { echo "::notice::not quiet for ${QUIET_HOURS}h yet"; exit 0; }
           view=$(gh pr view "$number" -R "$REPO" --json mergeable,statusCheckRollup)
-          [[ "$(jq -r .mergeable <<<"$view")" == MERGEABLE ]] || { echo "::warning::release PR #$number isn't mergeable"; exit 0; }
+          mergeable=$(jq -r .mergeable <<<"$view")
+          [[ "$mergeable" == MERGEABLE ]] || { echo "::warning::release PR #$number isn't mergeable ($mergeable)"; exit 0; }
           total=$(jq '.statusCheckRollup | length' <<<"$view")
           bad=$(jq '[.statusCheckRollup[] | (.conclusion // .state // "") | select(IN("SUCCESS","SKIPPED","NEUTRAL") | not)] | length' <<<"$view")
-          (( total > 0 && bad == 0 )) || { echo "checks not green yet ($bad of $total pending or failing)"; exit 0; }
+          if ! (( total > 0 && bad == 0 )); then
+            echo "::notice::checks not green yet ($bad of $total pending or failing): $(jq -c '[.statusCheckRollup[] | {name: (.name // .context), status: (.conclusion // .state // .status)}]' <<<"$view")"
+            exit 0
+          fi
 
           gh pr merge "$number" -R "$REPO" --squash --match-head-commit "$head"
           sha=$(gh pr view "$number" -R "$REPO" --json mergeCommit -q .mergeCommit.oid)
