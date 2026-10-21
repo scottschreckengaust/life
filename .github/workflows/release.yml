@@ -1,75 +1,392 @@
 name: release
 
-# Push a tag like v0.2.0 (matching Cargo.toml) and this publishes to crates.io with
-# trusted publishing (no API token stored anywhere), then attaches prebuilt binaries
-# to a GitHub Release so `cargo binstall spin-life` skips compiling.
+# A version bump on main becomes a release, one gate at a time:
+#
+#   plan     Is Cargo.toml's version new? (not tagged, not on crates.io)
+#   draft    A DRAFT GitHub Release pinned to this exact commit. No tag exists yet.
+#   build    Binaries for 4 targets (static on Linux), each with a .sha256 and signed build provenance,
+#            uploaded to the draft.
+#   crate    The .crate file crates.io will receive, with a .sha256 and provenance.
+#   test     On each OS, download the draft's assets (not the build outputs), verify the
+#            checksum and provenance, then run the binary against tests/golden.
+#   publish  cargo publish with crates.io trusted publishing, only after checking that the
+#            bytes it uploads are the attested .crate.
+#   verify   crates.io's index checksum and served .crate match the attested bytes,
+#            provenance verifies on the downloaded file, and `cargo install` from
+#            crates.io runs.
+#   release  Flip the draft to published. The tag is created now, at the drafted commit.
+#
+# On a release/** branch the same pipeline runs as a rehearsal: a throwaway prerelease
+# draft, `cargo publish --dry-run`, no crates.io checks, and the draft is deleted at the end.
+#
+# Actions are pinned to full commit SHAs; the comment names the release.
+
 on:
   push:
-    tags: ["v*"]
+    branches: [main, "release/**"]
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  # One toolchain for packaging and publishing, so the .crate bytes are reproducible.
+  RUST_TOOLCHAIN: "1.97.0"
+  CARGO_TERM_COLOR: always
 
 jobs:
-  test:
+  plan:
     runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-      - name: tag matches Cargo.toml
-        run: |
-          version=$(cargo metadata --no-deps --format-version 1 | jq -r '.packages[0].version')
-          [ "v$version" = "$GITHUB_REF_NAME" ] || { echo "tag $GITHUB_REF_NAME != Cargo.toml v$version"; exit 1; }
-      - run: cargo test --locked
-
-  publish:
-    needs: test
-    runs-on: ubuntu-latest
-    environment: release          # must match the environment set on crates.io (or remove both)
     permissions:
-      id-token: write             # lets GitHub mint the OIDC token crates.io trusts
       contents: read
+    outputs:
+      go: ${{ steps.plan.outputs.go }}
+      name: ${{ steps.plan.outputs.name }}
+      version: ${{ steps.plan.outputs.version }}
+      tag: ${{ steps.plan.outputs.tag }}
+      rehearsal: ${{ steps.plan.outputs.rehearsal }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-      - uses: rust-lang/crates-io-auth-action@v1
-        id: auth
-      - run: cargo publish --locked
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - id: plan
         env:
-          CARGO_REGISTRY_TOKEN: ${{ steps.auth.outputs.token }}
+          REF: ${{ github.ref }}
+          RUN: ${{ github.run_number }}
+          ATTEMPT: ${{ github.run_attempt }}
+        run: |
+          meta=$(cargo metadata --no-deps --format-version 1)
+          name=$(jq -r '.packages[0].name' <<<"$meta")
+          version=$(jq -r '.packages[0].version' <<<"$meta")
+          rehearsal=false; [[ "$REF" == refs/heads/main ]] || rehearsal=true
+          if $rehearsal; then tag="v$version-rehearsal.$RUN.$ATTEMPT"; else tag="v$version"; fi
+          go=true
+          if git ls-remote --exit-code --tags origin "refs/tags/v$version" >/dev/null; then
+            echo "::notice::v$version is already tagged"
+            $rehearsal || go=false
+          fi
+          index="https://index.crates.io/${name:0:2}/${name:2:2}/$name"
+          if curl -fsS "$index" 2>/dev/null | jq -e --arg v "$version" 'select(.vers == $v)' >/dev/null; then
+            echo "::notice::$name $version is already on crates.io"
+            $rehearsal || go=false
+          fi
+          $go || echo "::notice::nothing to release: bump the version in Cargo.toml to cut one"
+          { echo "go=$go"; echo "name=$name"; echo "version=$version"; echo "tag=$tag"; echo "rehearsal=$rehearsal"; } >>"$GITHUB_OUTPUT"
+          echo "### $tag (rehearsal: $rehearsal, go: $go)" >>"$GITHUB_STEP_SUMMARY"
 
-  release:
-    needs: test
+  draft:
+    needs: plan
+    if: needs.plan.outputs.go == 'true'
     runs-on: ubuntu-latest
     permissions:
       contents: write
     steps:
-      - uses: actions/checkout@v4
-      - run: gh release create "$GITHUB_REF_NAME" --generate-notes --title "spin-life $GITHUB_REF_NAME"
-        env:
-          GH_TOKEN: ${{ github.token }}
+      - uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64 # v3.0.3
+        with:
+          tag_name: ${{ needs.plan.outputs.tag }}
+          target_commitish: ${{ github.sha }}
+          name: ${{ needs.plan.outputs.name }} ${{ needs.plan.outputs.tag }}
+          draft: true
+          prerelease: ${{ needs.plan.outputs.rehearsal }}
+          generate_release_notes: true
+          body: |
+            ## Install
 
-  binaries:
-    needs: release
-    permissions:
-      contents: write
+            ```sh
+            cargo install ${{ needs.plan.outputs.name }} --version ${{ needs.plan.outputs.version }} --locked
+            cargo binstall ${{ needs.plan.outputs.name }}@${{ needs.plan.outputs.version }}   # prebuilt
+            ```
+
+            ## Verify a download
+
+            Every asset has a `.sha256` file and signed build provenance (Sigstore, via GitHub
+            artifact attestations) tying it to this repository, this workflow and commit
+            ${{ github.sha }}.
+
+            ```sh
+            gh release download ${{ needs.plan.outputs.tag }} -R ${{ github.repository }} -p '${{ needs.plan.outputs.name }}-x86_64-unknown-linux-musl.*'
+            sha256sum -c ${{ needs.plan.outputs.name }}-x86_64-unknown-linux-musl.sha256
+            gh attestation verify ${{ needs.plan.outputs.name }}-x86_64-unknown-linux-musl.tar.gz -R ${{ github.repository }}
+            ```
+
+            The `.crate` attached here is byte-for-byte the file on crates.io; the release
+            workflow checked that before publishing this page.
+
+  build:
+    needs: [plan, draft]
     strategy:
+      fail-fast: false
       matrix:
         include:
-          - { os: ubuntu-latest, target: x86_64-unknown-linux-gnu }
-          - { os: ubuntu-24.04-arm, target: aarch64-unknown-linux-gnu }
+          # Linux: static musl binaries, so they don't depend on the runner's glibc.
+          - { os: ubuntu-latest, target: x86_64-unknown-linux-musl }
+          - { os: ubuntu-24.04-arm, target: aarch64-unknown-linux-musl }
           - { os: macos-latest, target: aarch64-apple-darwin }
           - { os: windows-latest, target: x86_64-pc-windows-msvc }
     runs-on: ${{ matrix.os }}
+    permissions:
+      contents: write # upload to the draft
+      id-token: write # sign the provenance
+      attestations: write
     steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # master
+        with:
+          toolchain: ${{ env.RUST_TOOLCHAIN }}
           targets: ${{ matrix.target }}
-      - run: cargo build --release --locked --target ${{ matrix.target }}
-      - name: package and upload
+      - id: dist
+        name: build, archive, checksum
+        uses: taiki-e/upload-rust-binary-action@f0d45ae91ee7b8ee928de7a9d04d893a08bcbec6 # v1.30.2
+        with:
+          bin: spin-life
+          target: ${{ matrix.target }}
+          locked: true
+          build-tool: cargo # pure Rust: no need for cross/Docker, even for musl
+          checksum: sha256
+          dry-run: true # attest before uploading; softprops does the upload
+          dry-run-intended: true
+      - name: build provenance
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-path: ${{ steps.dist.outputs.tar || steps.dist.outputs.zip }}
+      # Upload only. Updating the release (what action-gh-release does on every call) is
+      # refused once the branch has moved past the drafted commit.
+      - name: upload to the draft
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.plan.outputs.tag }}
+          ARCHIVE: ${{ steps.dist.outputs.tar || steps.dist.outputs.zip }}
+          SUM: ${{ steps.dist.outputs.sha256 }}
+        run: gh release upload "$TAG" "$ARCHIVE" "$SUM" --clobber -R "$GITHUB_REPOSITORY"
+
+  crate:
+    needs: [plan, draft]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
+    outputs:
+      sha256: ${{ steps.pack.outputs.sha256 }}
+      file: ${{ steps.pack.outputs.file }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # master
+        with:
+          toolchain: ${{ env.RUST_TOOLCHAIN }}
+      - id: pack
+        env:
+          NAME: ${{ needs.plan.outputs.name }}
+          VERSION: ${{ needs.plan.outputs.version }}
         run: |
-          ext=""; [[ "${{ matrix.target }}" == *windows* ]] && ext=".exe"
-          archive="spin-life-${{ matrix.target }}.tgz"
-          tar czf "$archive" -C "target/${{ matrix.target }}/release" "spin-life$ext"
-          gh release upload "$GITHUB_REF_NAME" "$archive"
+          cargo package --locked
+          file="$NAME-$VERSION.crate"
+          cp "target/package/$file" .
+          sha256sum "$file" | tee "$file.sha256"
+          { echo "file=$file"; echo "sha256=$(cut -d' ' -f1 "$file.sha256")"; } >>"$GITHUB_OUTPUT"
+      - name: build provenance
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-path: ${{ steps.pack.outputs.file }}
+      - name: upload to the draft
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.plan.outputs.tag }}
+          FILE: ${{ steps.pack.outputs.file }}
+        run: gh release upload "$TAG" "$FILE" "$FILE.sha256" --clobber -R "$GITHUB_REPOSITORY"
+
+  test:
+    name: test ${{ matrix.target }} (from the draft)
+    needs: [plan, build, crate]
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: ubuntu-latest, target: x86_64-unknown-linux-musl, ext: tar.gz }
+          - { os: ubuntu-24.04-arm, target: aarch64-unknown-linux-musl, ext: tar.gz }
+          - { os: macos-latest, target: aarch64-apple-darwin, ext: tar.gz }
+          - { os: windows-latest, target: x86_64-pc-windows-msvc, ext: zip }
+    runs-on: ${{ matrix.os }}
+    permissions:
+      contents: write # reading a *draft* release needs push access
+      attestations: read
+    defaults:
+      run:
+        shell: bash
+    env:
+      GH_TOKEN: ${{ github.token }}
+      TAG: ${{ needs.plan.outputs.tag }}
+      ASSET: spin-life-${{ matrix.target }}
+      EXT: ${{ matrix.ext }}
+      TARGET: ${{ matrix.target }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          sparse-checkout: |
+            tests/golden
+            .github/release
+      - name: download from the draft release
+        run: |
+          mkdir dl && cd dl
+          gh release download "$TAG" -R "$GITHUB_REPOSITORY" -p "$ASSET.*"
+          ls -l
+      - name: verify checksum
+        working-directory: dl
+        run: |
+          if command -v sha256sum >/dev/null; then sha256sum -c "$ASSET.sha256"; else shasum -a 256 -c "$ASSET.sha256"; fi
+      - name: verify provenance
+        working-directory: dl
+        run: |
+          gh attestation verify "$ASSET.$EXT" -R "$GITHUB_REPOSITORY" \
+            --signer-workflow "$GITHUB_REPOSITORY/.github/workflows/release.yml" \
+            --source-digest "$GITHUB_SHA" \
+            --deny-self-hosted-runners
+      - name: unpack
+        working-directory: dl
+        run: |
+          if [[ "$EXT" == zip ]]; then unzip -o "$ASSET.zip"; else tar xzf "$ASSET.tar.gz"; fi
+      - name: statically linked
+        if: runner.os == 'Linux'
+        run: |
+          file dl/spin-life
+          file dl/spin-life | grep -Eq 'static(ally|-pie) linked'
+      - name: smoke test
+        env:
+          VERSION: ${{ needs.plan.outputs.version }}
+        run: |
+          exe=""; [[ "$TARGET" == *windows* ]] && exe=".exe"
+          .github/release/smoke.sh "dl/spin-life$exe" "$VERSION" tests/golden
+
+  publish:
+    needs: [plan, crate, test]
+    runs-on: ubuntu-latest
+    # Must match the environment on crates.io's trusted publisher. Rehearsals use their own,
+    # so required reviewers on `release` never block them.
+    environment: ${{ needs.plan.outputs.rehearsal == 'true' && 'rehearsal' || 'release' }}
+    permissions:
+      contents: read
+      id-token: write # trusted publishing: GitHub OIDC token -> short-lived crates.io token
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # master
+        with:
+          toolchain: ${{ env.RUST_TOOLCHAIN }}
+      - name: the bytes we upload are the bytes we attested
+        env:
+          WANT: ${{ needs.crate.outputs.sha256 }}
+          FILE: ${{ needs.crate.outputs.file }}
+        run: |
+          cargo package --locked
+          got=$(sha256sum "target/package/$FILE" | cut -d' ' -f1)
+          echo "attested $WANT"; echo "packaged $got"
+          [[ "$got" == "$WANT" ]] || { echo "::error::cargo package is not reproducible here; refusing to publish"; exit 1; }
+      - name: rehearsal (dry run)
+        if: needs.plan.outputs.rehearsal == 'true'
+        run: cargo publish --locked --dry-run
+      - name: trusted publishing
+        id: auth
+        if: needs.plan.outputs.rehearsal != 'true'
+        continue-on-error: true # the very first release uses CARGO_REGISTRY_TOKEN instead
+        uses: rust-lang/crates-io-auth-action@c6f97d42243bad5fab37ca0427f495c86d5b1a18 # v1.0.5
+      - name: cargo publish
+        if: needs.plan.outputs.rehearsal != 'true'
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ steps.auth.outputs.token || secrets.CARGO_REGISTRY_TOKEN }}
+        run: |
+          if [[ -z "$CARGO_REGISTRY_TOKEN" ]]; then
+            echo "::error::no crates.io credentials. Configure trusted publishing on crates.io (see README > Releasing), or for the first release add a CARGO_REGISTRY_TOKEN secret to the 'release' environment. Then re-run the failed jobs: the draft is still waiting."
+            exit 1
+          fi
+          cargo publish --locked
+
+  verify:
+    needs: [plan, crate, publish]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # reading the draft
+      attestations: read
+    env:
+      GH_TOKEN: ${{ github.token }}
+      NAME: ${{ needs.plan.outputs.name }}
+      VERSION: ${{ needs.plan.outputs.version }}
+      WANT: ${{ needs.crate.outputs.sha256 }}
+      FILE: ${{ needs.crate.outputs.file }}
+      REHEARSAL: ${{ needs.plan.outputs.rehearsal }}
+    steps:
+      - name: get the .crate
+        run: |
+          mkdir dl && cd dl
+          if [[ "$REHEARSAL" == true ]]; then
+            echo "rehearsal: checking the draft's .crate instead of crates.io"
+            gh release download "${{ needs.plan.outputs.tag }}" -R "$GITHUB_REPOSITORY" -p "$FILE"
+            exit 0
+          fi
+          index="https://index.crates.io/${NAME:0:2}/${NAME:2:2}/$NAME"
+          for i in $(seq 1 60); do
+            cksum=$(curl -fsS "$index" 2>/dev/null | jq -r --arg v "$VERSION" 'select(.vers == $v) | .cksum' || true)
+            [[ -n "$cksum" ]] && break
+            echo "waiting for crates.io's index ($i)"; sleep 10
+          done
+          [[ -n "$cksum" ]] || { echo "::error::$NAME $VERSION never appeared in the crates.io index"; exit 1; }
+          echo "index checksum $cksum"
+          [[ "$cksum" == "$WANT" ]] || { echo "::error::crates.io index checksum differs from the attested .crate"; exit 1; }
+          curl -fsSL -o "$FILE" "https://static.crates.io/crates/$NAME/$FILE"
+      - name: same bytes as attested
+        working-directory: dl
+        run: |
+          got=$(sha256sum "$FILE" | cut -d' ' -f1)
+          echo "attested $WANT"; echo "fetched  $got"
+          [[ "$got" == "$WANT" ]] || { echo "::error::the .crate differs from the attested one"; exit 1; }
+      - name: provenance verifies on the published file
+        working-directory: dl
+        run: |
+          gh attestation verify "$FILE" -R "$GITHUB_REPOSITORY" \
+            --signer-workflow "$GITHUB_REPOSITORY/.github/workflows/release.yml" \
+            --source-digest "$GITHUB_SHA" \
+            --deny-self-hosted-runners
+      - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # master
+        if: env.REHEARSAL != 'true'
+        with:
+          toolchain: stable
+      - name: cargo install from crates.io
+        if: env.REHEARSAL != 'true'
+        run: |
+          for attempt in 1 2 3 4 5; do
+            cargo install "$NAME" --version "$VERSION" --locked --root "$RUNNER_TEMP/from-crates-io" && break
+            echo "attempt $attempt failed; retrying in 30s"; sleep 30
+          done
+          "$RUNNER_TEMP/from-crates-io/bin/spin-life" --version | grep -Fx "spin-life $VERSION"
+
+  release:
+    needs: [plan, verify]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: publish the release
+        if: needs.plan.outputs.rehearsal != 'true'
+        uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64 # v3.0.3
+        with:
+          tag_name: ${{ needs.plan.outputs.tag }}
+          target_commitish: ${{ github.sha }}
+          draft: false
+          make_latest: true
+      - name: rehearsal over, delete its draft (and any left by failed rehearsals)
+        if: needs.plan.outputs.rehearsal == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release list -R "$GITHUB_REPOSITORY" --limit 100 --json tagName,isDraft \
+            --jq '.[] | select(.isDraft and (.tagName | contains("-rehearsal."))) | .tagName' |
+            while read -r tag; do gh release delete "$tag" -R "$GITHUB_REPOSITORY" --yes; echo "deleted $tag"; done

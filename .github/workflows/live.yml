@@ -1,6 +1,9 @@
 name: live
 
 # Actions -> live -> Run workflow. The report lands in the run summary.
+permissions:
+  contents: read
+
 on:
   workflow_dispatch:
     inputs:
@@ -20,8 +23,12 @@ jobs:
   live:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # master
+        with:
+          toolchain: stable
       - name: live
         env:
           PRESET: ${{ inputs.preset }}
@@ -29,6 +36,9 @@ jobs:
           SCALE: ${{ inputs.scale }}
         run: |
           cargo build --release -q
-          if [ "$SCALE" = "0" ]; then pace="--instant"; else pace="--scale $SCALE"; fi
-          ./target/release/spin-life run $SCENARIO --preset "$PRESET" $pace | tee life.txt
+          args=(run)
+          [ -n "$SCENARIO" ] && args+=("$SCENARIO")
+          args+=(--preset "$PRESET")
+          if [ "$SCALE" = "0" ]; then args+=(--instant); else args+=(--scale "$SCALE"); fi
+          ./target/release/spin-life "${args[@]}" | tee life.txt
           { echo '```text'; cat life.txt; echo '```'; } >> "$GITHUB_STEP_SUMMARY"

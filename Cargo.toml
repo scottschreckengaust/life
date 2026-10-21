@@ -1,6 +1,6 @@
 [package]
 name = "spin-life"
-version = "0.2.0"
+version = "0.1.0"
 edition = "2021"
 rust-version = "1.70"
 description = "Simulate a life from rules you write: priorities, preemption, interruptions and sleep, on a zero-dependency virtual-time async runtime."
@@ -24,7 +24,20 @@ name = "spin_life"
 name = "spin-life"
 path = "src/main.rs"
 
+# cargo binstall spin-life: download the release asset instead of compiling.
+# Names match taiki-e/upload-rust-binary-action's defaults ($bin-$target).
 [package.metadata.binstall]
-pkg-url = "{ repo }/releases/download/v{ version }/{ name }-{ target }{ archive-suffix }"
+pkg-url = "{ repo }/releases/download/v{ version }/{ name }-{ target }.tar.gz"
 pkg-fmt = "tgz"
 bin-dir = "{ bin }{ binary-ext }"
+
+# Linux binaries are static (musl) so they run on any distribution; serve them to gnu hosts too.
+[package.metadata.binstall.overrides.x86_64-unknown-linux-gnu]
+pkg-url = "{ repo }/releases/download/v{ version }/{ name }-x86_64-unknown-linux-musl.tar.gz"
+
+[package.metadata.binstall.overrides.aarch64-unknown-linux-gnu]
+pkg-url = "{ repo }/releases/download/v{ version }/{ name }-aarch64-unknown-linux-musl.tar.gz"
+
+[package.metadata.binstall.overrides.x86_64-pc-windows-msvc]
+pkg-url = "{ repo }/releases/download/v{ version }/{ name }-{ target }.zip"
+pkg-fmt = "zip"

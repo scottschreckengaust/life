@@ -1,6 +1,6 @@
 //! The reference life (presets/scott.life.toml), tested. Every test runs on virtual
 //! time, so a week takes microseconds and the same life comes out every time.
-//! These are the same assertions the hard-coded v0.1 engine passed: the rules engine
+//! These are the same assertions the original hard-coded engine passed: the rules engine
 //! reproduces it exactly.
 
 use spin_life::{rt::Mode, Journal, Life, Rules, PRESETS};
