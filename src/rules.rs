@@ -264,6 +264,25 @@ impl Rules {
         if specs.is_empty() {
             return fail("a life needs at least one [pursuit.<name>]");
         }
+        // Report pursuits in the order you rank them (workday first), not alphabetically.
+        // Anything unranked follows, alphabetically. Peek only: [priorities] is validated below.
+        let ranked: Vec<String> = match root.t.get("priorities") {
+            Some(Value::Table(p)) => ["workday", "all", "weekend"]
+                .iter()
+                .filter_map(|k| match p.get(*k) {
+                    Some(Value::Array(items)) => Some(items.clone()),
+                    Some(v @ Value::Str(_)) => Some(vec![v.clone()]),
+                    _ => None,
+                })
+                .flatten()
+                .filter_map(|v| match v {
+                    Value::Str(s) => Some(s),
+                    _ => None,
+                })
+                .collect(),
+            _ => vec![],
+        };
+        specs.sort_by_key(|(name, _)| ranked.iter().position(|r| r == name).unwrap_or(usize::MAX));
         let names: Vec<String> = specs.iter().map(|(n, _)| n.clone()).collect();
         let index = |name: &str, ctx: &str| -> Result<usize> {
             names.iter().position(|n| n == name).ok_or_else(|| {

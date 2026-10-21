@@ -256,3 +256,13 @@ fn toml_errors_have_line_numbers() {
     let e = toml::parse("wake = 06:30").unwrap_err();
     assert!(e.msg.contains("times need quotes"));
 }
+
+#[test]
+fn pursuits_are_reported_in_priority_order() {
+    let names = |r: &Rules| r.pursuits.iter().map(|p| p.name.clone()).collect::<Vec<_>>();
+    assert_eq!(names(&Rules::preset("agent").unwrap()), ["users", "jobs", "research"]);
+    assert_eq!(names(&Rules::preset("parent").unwrap()), ["kids", "guitar", "running"]);
+    // Unranked pursuits follow the ranked ones, alphabetically.
+    let src = "[priorities]\nall = [\"zen\"]\n[pursuit.b]\n[pursuit.a]\n[pursuit.zen]\n";
+    assert_eq!(names(&Rules::parse(src).unwrap()), ["zen", "a", "b"]);
+}
