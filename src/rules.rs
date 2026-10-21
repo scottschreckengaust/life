@@ -217,7 +217,7 @@ impl Scenario {
     pub fn plain(days: usize) -> Self {
         Scenario {
             name: "plain".into(),
-            about: format!("{days} ordinary days"),
+            about: format!("{days} ordinary day{}", if days == 1 { "" } else { "s" }),
             start: 0,
             days,
             events: vec![],
