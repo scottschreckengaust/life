@@ -4,8 +4,9 @@ name: release-plz
 # since the last release. Merging that PR is what cuts a release (release.yml does the rest);
 # release-cut.yml merges it for you after 6 quiet hours.
 #
-# Needs a credential that isn't the default GITHUB_TOKEN, because PRs and pushes made with
-# that token don't trigger CI or release.yml. See README > Releasing > One-time setup.
+# Runs as github-actions[bot] with the built-in GITHUB_TOKEN. PRs made with that token don't
+# trigger CI by themselves, so this starts CI on the release PR explicitly.
+# Needs: Settings > Actions > General > "Allow GitHub Actions to create and approve pull requests".
 
 on:
   push:
@@ -23,39 +24,27 @@ jobs:
     if: github.repository_owner == 'scottschreckengaust'
     runs-on: ubuntu-latest
     permissions:
-      contents: read
+      contents: write # commit the version bump to the release branch
+      pull-requests: write # open and update the release PR
+      actions: write # start CI on it
     steps:
-      - id: app
-        if: vars.RELEASE_APP_CLIENT_ID != ''
-        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
-        with:
-          client-id: ${{ vars.RELEASE_APP_CLIENT_ID }}
-          private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
-          permission-contents: write
-          permission-pull-requests: write
-      - id: token
-        env:
-          TOKEN: ${{ steps.app.outputs.token || secrets.RELEASE_PLZ_TOKEN }}
-        run: |
-          if [[ -z "$TOKEN" ]]; then
-            echo "::notice::no release credential yet (README > Releasing > One-time setup); skipping"
-            echo "ok=false" >>"$GITHUB_OUTPUT"
-          else
-            echo "ok=true" >>"$GITHUB_OUTPUT"
-          fi
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        if: steps.token.outputs.ok == 'true'
         with:
           fetch-depth: 0
           persist-credentials: false
       - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # master
-        if: steps.token.outputs.ok == 'true'
         with:
           toolchain: stable
-      - name: open or update the release PR
-        if: steps.token.outputs.ok == 'true'
+      - id: release-plz
+        name: open or update the release PR
         uses: release-plz/action@6caa8d34f74d82b0dc76a18edd1cc3d6801c9baf # v0.5.143
         with:
           command: release-pr
         env:
-          GITHUB_TOKEN: ${{ steps.app.outputs.token || secrets.RELEASE_PLZ_TOKEN }}
+          GITHUB_TOKEN: ${{ github.token }}
+      - name: start CI on the release PR
+        if: steps.release-plz.outputs.pr != '' && steps.release-plz.outputs.pr != '{}'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BRANCH: ${{ fromJSON(steps.release-plz.outputs.pr).head_branch }}
+        run: gh workflow run ci.yml -R "$GITHUB_REPOSITORY" --ref "$BRANCH"

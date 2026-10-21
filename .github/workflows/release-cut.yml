@@ -24,24 +24,16 @@ jobs:
     if: github.repository_owner == 'scottschreckengaust'
     runs-on: ubuntu-latest
     permissions:
-      contents: read
+      contents: write # merge, and tag the merge commit
+      pull-requests: write
+      actions: write # start release.yml
+    env:
+      GH_TOKEN: ${{ github.token }}
+      QUIET_HOURS: ${{ inputs.quiet_hours || '6' }}
+      REPO: ${{ github.repository }}
     steps:
-      - id: app
-        if: vars.RELEASE_APP_CLIENT_ID != ''
-        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
-        with:
-          client-id: ${{ vars.RELEASE_APP_CLIENT_ID }}
-          private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
-          permission-contents: write
-          permission-pull-requests: write
-      - name: merge the release PR if it has been quiet
-        env:
-          # The merge must not use GITHUB_TOKEN, or it wouldn't start release.yml.
-          GH_TOKEN: ${{ steps.app.outputs.token || secrets.RELEASE_PLZ_TOKEN }}
-          QUIET_HOURS: ${{ inputs.quiet_hours || '6' }}
-          REPO: ${{ github.repository }}
+      - name: merge the release PR if it has been quiet, then start the release
         run: |
-          [[ -n "$GH_TOKEN" ]] || { echo "::notice::no release credential yet; nothing to do"; exit 0; }
           pr=$(gh pr list -R "$REPO" --state open --base main --json number,headRefName,headRefOid \
             --jq '[.[] | select(.headRefName | startswith("release-plz-"))] | first // empty')
           [[ -n "$pr" ]] || { echo "no release PR open"; exit 0; }
@@ -55,5 +47,14 @@ jobs:
           total=$(jq '.statusCheckRollup | length' <<<"$view")
           bad=$(jq '[.statusCheckRollup[] | (.conclusion // .state // "") | select(IN("SUCCESS","SKIPPED","NEUTRAL") | not)] | length' <<<"$view")
           (( total > 0 && bad == 0 )) || { echo "checks not green yet ($bad of $total pending or failing)"; exit 0; }
+
           gh pr merge "$number" -R "$REPO" --squash --match-head-commit "$head"
-          echo "### merged release PR #$number after ${quiet} quiet minutes" >>"$GITHUB_STEP_SUMMARY"
+          sha=$(gh pr view "$number" -R "$REPO" --json mergeCommit -q .mergeCommit.oid)
+          version=$(gh api "repos/$REPO/contents/Cargo.toml?ref=$sha" -q .content | base64 -d |
+            sed -n 's/^version = "\(.*\)"/\1/p' | head -1)
+          [[ -n "$sha" && -n "$version" ]] || { echo "::error::merged #$number but couldn't read its commit/version"; exit 1; }
+          # The bot's merge doesn't trigger release.yml, so tag the exact merge commit and
+          # dispatch the release on that tag: it builds that commit and nothing later.
+          gh api "repos/$REPO/git/refs" -f ref="refs/tags/v$version" -f sha="$sha" -q .ref
+          gh workflow run release.yml -R "$REPO" --ref "v$version"
+          echo "### merged #$number after ${quiet} quiet minutes; releasing v$version from $sha" >>"$GITHUB_STEP_SUMMARY"
