@@ -36,6 +36,9 @@ jobs:
           SCALE: ${{ inputs.scale }}
         run: |
           cargo build --release -q
-          if [ "$SCALE" = "0" ]; then pace="--instant"; else pace="--scale $SCALE"; fi
-          ./target/release/spin-life run $SCENARIO --preset "$PRESET" $pace | tee life.txt
+          args=(run)
+          [ -n "$SCENARIO" ] && args+=("$SCENARIO")
+          args+=(--preset "$PRESET")
+          if [ "$SCALE" = "0" ]; then args+=(--instant); else args+=(--scale "$SCALE"); fi
+          ./target/release/spin-life "${args[@]}" | tee life.txt
           { echo '```text'; cat life.txt; echo '```'; } >> "$GITHUB_STEP_SUMMARY"

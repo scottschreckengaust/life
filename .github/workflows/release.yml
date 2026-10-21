@@ -225,6 +225,8 @@ jobs:
       GH_TOKEN: ${{ github.token }}
       TAG: ${{ needs.plan.outputs.tag }}
       ASSET: spin-life-${{ matrix.target }}
+      EXT: ${{ matrix.ext }}
+      TARGET: ${{ matrix.target }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -244,18 +246,20 @@ jobs:
       - name: verify provenance
         working-directory: dl
         run: |
-          gh attestation verify "$ASSET.${{ matrix.ext }}" -R "$GITHUB_REPOSITORY" \
+          gh attestation verify "$ASSET.$EXT" -R "$GITHUB_REPOSITORY" \
             --signer-workflow "$GITHUB_REPOSITORY/.github/workflows/release.yml" \
             --source-digest "$GITHUB_SHA" \
             --deny-self-hosted-runners
       - name: unpack
         working-directory: dl
         run: |
-          if [[ "${{ matrix.ext }}" == zip ]]; then unzip -o "$ASSET.zip"; else tar xzf "$ASSET.tar.gz"; fi
+          if [[ "$EXT" == zip ]]; then unzip -o "$ASSET.zip"; else tar xzf "$ASSET.tar.gz"; fi
       - name: smoke test
+        env:
+          VERSION: ${{ needs.plan.outputs.version }}
         run: |
-          ext=""; [[ "${{ matrix.target }}" == *windows* ]] && ext=".exe"
-          .github/release/smoke.sh "dl/spin-life$ext" "${{ needs.plan.outputs.version }}" tests/golden
+          exe=""; [[ "$TARGET" == *windows* ]] && exe=".exe"
+          .github/release/smoke.sh "dl/spin-life$exe" "$VERSION" tests/golden
 
   publish:
     needs: [plan, crate, test]
@@ -353,9 +357,9 @@ jobs:
       - name: cargo install from crates.io
         if: env.REHEARSAL != 'true'
         run: |
-          for i in 1 2 3 4 5; do
+          for attempt in 1 2 3 4 5; do
             cargo install "$NAME" --version "$VERSION" --locked --root "$RUNNER_TEMP/from-crates-io" && break
-            echo "retrying in 30s"; sleep 30
+            echo "attempt $attempt failed; retrying in 30s"; sleep 30
           done
           "$RUNNER_TEMP/from-crates-io/bin/spin-life" --version | grep -Fx "spin-life $VERSION"
 
