@@ -152,15 +152,16 @@ jobs:
         uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
         with:
           subject-path: ${{ steps.dist.outputs.tar || steps.dist.outputs.zip }}
+      # Upload only. Updating the release (what action-gh-release does on every call) is
+      # refused once the branch has moved past the drafted commit.
       - name: upload to the draft
-        uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64 # v3.0.3
-        with:
-          tag_name: ${{ needs.plan.outputs.tag }}
-          draft: true
-          fail_on_unmatched_files: true
-          files: |
-            ${{ steps.dist.outputs.tar || steps.dist.outputs.zip }}
-            ${{ steps.dist.outputs.sha256 }}
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.plan.outputs.tag }}
+          ARCHIVE: ${{ steps.dist.outputs.tar || steps.dist.outputs.zip }}
+          SUM: ${{ steps.dist.outputs.sha256 }}
+        run: gh release upload "$TAG" "$ARCHIVE" "$SUM" --clobber -R "$GITHUB_REPOSITORY"
 
   crate:
     needs: [plan, draft]
@@ -194,14 +195,11 @@ jobs:
         with:
           subject-path: ${{ steps.pack.outputs.file }}
       - name: upload to the draft
-        uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64 # v3.0.3
-        with:
-          tag_name: ${{ needs.plan.outputs.tag }}
-          draft: true
-          fail_on_unmatched_files: true
-          files: |
-            ${{ steps.pack.outputs.file }}
-            ${{ steps.pack.outputs.file }}.sha256
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.plan.outputs.tag }}
+          FILE: ${{ steps.pack.outputs.file }}
+        run: gh release upload "$TAG" "$FILE" "$FILE.sha256" --clobber -R "$GITHUB_REPOSITORY"
 
   test:
     name: test ${{ matrix.target }} (from the draft)
@@ -377,8 +375,11 @@ jobs:
           target_commitish: ${{ github.sha }}
           draft: false
           make_latest: true
-      - name: rehearsal over, delete the draft
+      - name: rehearsal over, delete its draft (and any left by failed rehearsals)
         if: needs.plan.outputs.rehearsal == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release delete "${{ needs.plan.outputs.tag }}" -R "$GITHUB_REPOSITORY" --yes
+        run: |
+          gh release list -R "$GITHUB_REPOSITORY" --limit 100 --json tagName,isDraft \
+            --jq '.[] | select(.isDraft and (.tagName | contains("-rehearsal."))) | .tagName' |
+            while read -r tag; do gh release delete "$tag" -R "$GITHUB_REPOSITORY" --yes; echo "deleted $tag"; done
