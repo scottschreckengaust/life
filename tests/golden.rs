@@ -32,3 +32,15 @@ fn agent_incident() {
 fn parent_teething() {
     golden(&["teething", "-p", "parent", "-i", "-q"], "parent-teething.txt");
 }
+
+#[test]
+fn real_time_runs_say_how_long_they_take() {
+    // 1 day at 0.001s per simulated hour: ~0.02s of wall time.
+    let out = Command::new(env!("CARGO_BIN_EXE_spin-life"))
+        .args(["--days", "1", "--scale", "0.001", "--quiet"])
+        .output()
+        .unwrap();
+    let stdout = String::from_utf8(out.stdout).unwrap();
+    assert!(stdout.contains("⏱  about 0.0s of real time; add --instant"), "{stdout}");
+    assert!(stdout.contains("1 ordinary day (1 day,"), "{stdout}");
+}

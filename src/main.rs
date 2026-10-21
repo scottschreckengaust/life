@@ -94,9 +94,15 @@ fn run(a: &Args) {
         println!("“{motto}”");
     }
     println!(
-        "🌍 {} / {}: {} ({} day{plural}, {pace})\n",
+        "🌍 {} / {}: {} ({} day{plural}, {pace})",
         rules.name, scenario.name, scenario.about, scenario.days
     );
+    if !a.instant {
+        // Each day runs from one morning's alarm to the next: one spin of the earth.
+        let secs = scenario.days as f64 * spin_life::EARTH_SPIN * a.scale.unwrap_or(1.0);
+        println!("⏱  about {} of real time; add --instant to skip ahead, or --scale to speed up", wall(secs));
+    }
+    println!();
     let journal = Life::new(&rules, &scenario).echo(!a.quiet).run(mode);
     print!("{}", journal.report());
 }
@@ -161,4 +167,15 @@ fn parse_args() -> Args {
 fn fail(msg: &str) -> ! {
     eprintln!("{msg}\n\n{USAGE}");
     exit(2)
+}
+
+/// `"2m 48s"`, `"1h 12m"`, `"0.4s"`.
+fn wall(secs: f64) -> String {
+    let s = secs.round() as u64;
+    match s {
+        _ if secs < 10.0 => format!("{secs:.1}s"),
+        0..=59 => format!("{s}s"),
+        60..=3599 => format!("{}m {:02}s", s / 60, s % 60),
+        _ => format!("{}h {:02}m", s / 3600, s % 3600 / 60),
+    }
 }
