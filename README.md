@@ -267,23 +267,18 @@ It's assembled from off-the-shelf actions, pinned to commit SHAs:
 [`softprops/action-gh-release`](https://github.com/softprops/action-gh-release) (draft, publish),
 [`taiki-e/upload-rust-binary-action`](https://github.com/taiki-e/upload-rust-binary-action) (cross-platform build,
 archive, checksums), [`actions/attest`](https://github.com/actions/attest) (provenance),
-[`rust-lang/crates-io-auth-action`](https://github.com/rust-lang/crates-io-auth-action) (trusted publishing),
-[`actions/create-github-app-token`](https://github.com/actions/create-github-app-token) and the `gh` CLI.
+[`rust-lang/crates-io-auth-action`](https://github.com/rust-lang/crates-io-auth-action) (trusted publishing)
+and the `gh` CLI. Everything runs as `github-actions[bot]`.
 
 ### One-time setup
 
 1. **crates.io trusted publishing** (done): owner `scottschreckengaust`, repository `life`, workflow
    `release.yml`, environment `release`. Delete any `CARGO_REGISTRY_TOKEN` secret and revoke the token.
-2. **A credential for release-plz.** PRs opened and merges made with the default `GITHUB_TOKEN` don't run CI or
-   start `release.yml`, so the release PR needs its own identity. Either:
-   - **a GitHub App** (recommended: short-lived tokens). Create one under Settings → Developer settings → GitHub
-     Apps with repository permissions *Contents: read and write* and *Pull requests: read and write*, no webhook,
-     and install it on this repository only. Save its Client ID as the variable `RELEASE_APP_CLIENT_ID` and a
-     private key as the secret `RELEASE_APP_PRIVATE_KEY` (Settings → Secrets and variables → Actions); or
-   - **a fine-grained personal access token** for this repository only, with the same two permissions, saved as
-     the secret `RELEASE_PLZ_TOKEN`.
-
-   Until one exists, release-plz and release-cut skip with a notice.
+2. **Let the bot open PRs:** Settings → Actions → General → Workflow permissions → tick *Allow GitHub Actions
+   to create and approve pull requests*. Everything runs as `github-actions[bot]` with the built-in token; no
+   App or personal token. Pushes and PRs made with that token don't start workflows by themselves, so
+   release-plz starts CI on its PR, and release-cut tags the merge commit and starts `release.yml` on that tag.
+   If the `release` environment limits deployment branches, also allow tags matching `v*`.
 3. **Lock what's released:** turn on *immutable releases* (Settings → General → Releases), and add a tag ruleset
    for `v*` (Settings → Rules → Rulesets → New tag ruleset) that restricts **updates** and **deletions**. Leave
    creations allowed: the pipeline creates the tag. Rehearsal tags (`rehearsal/…`) are outside `v*`, so they can

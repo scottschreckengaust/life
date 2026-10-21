@@ -4,6 +4,7 @@ on:
   push:
     branches: [main]
   pull_request:
+  workflow_dispatch: # release-plz starts this on the release PR (bot-made PRs don't trigger it)
 
 permissions:
   contents: read

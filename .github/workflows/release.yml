@@ -16,6 +16,10 @@ name: release
 #   verify   crates.io's index checksum and served .crate match the attested bytes,
 #            provenance verifies on the downloaded file, and `cargo install` from
 #            crates.io runs.
+# It starts one of two ways: a human merges the release PR (a push to main), or release-cut
+# merges it as github-actions[bot], tags the merge commit, and dispatches this workflow on
+# that tag (pushes made with GITHUB_TOKEN don't trigger workflows; dispatches do).
+#
 #   release  Flip the draft to published, then start release-plz so merges that landed
 #            during this release get their release PR.
 #
@@ -35,7 +39,8 @@ on:
 permissions: {}
 
 concurrency:
-  group: release-${{ github.ref }}
+  # Real releases (main or a v* tag) share one queue; each rehearsal branch has its own.
+  group: release-${{ startsWith(github.ref, 'refs/heads/release/') && github.ref || 'real' }}
   cancel-in-progress: false
 
 env:
@@ -70,7 +75,7 @@ jobs:
           meta=$(cargo metadata --no-deps --format-version 1)
           name=$(jq -r '.packages[0].name' <<<"$meta")
           version=$(jq -r '.packages[0].version' <<<"$meta")
-          rehearsal=false; [[ "$REF" == refs/heads/main ]] || rehearsal=true
+          rehearsal=true; [[ "$REF" == refs/heads/main || "$REF" == refs/tags/v* ]] && rehearsal=false
           # A SemVer pre-release (0.2.0-rc.1, -beta.2, ...) ships as a GitHub prerelease, never "latest".
           prerelease=false; [[ "$version" == *-* ]] && prerelease=true
           # Rehearsal tags live outside v* so the rule protecting v* tags doesn't stop cleanup.
