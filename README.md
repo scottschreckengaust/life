@@ -182,7 +182,7 @@ that blocks the executor and burns a core until a real `std::thread` sets the fl
 hint between `.await`ed dream slices, so time can still pass.
 
 **Did the rules engine change the reference life?** No. All eleven scenarios produce the same numbers and
-timelines to the hard-coded v0.1 engine, and the same tests pass against the preset.
+timelines to the original hard-coded engine, and the same tests pass against the preset.
 
 ## Layout
 
@@ -207,9 +207,9 @@ Every release asset comes with a `.sha256` file and **signed build provenance**:
 commit it was built from.
 
 ```sh
-gh release download v0.2.0 -R scottschreckengaust/life -p 'spin-life-x86_64-unknown-linux-gnu.*'
-sha256sum -c spin-life-x86_64-unknown-linux-gnu.sha256
-gh attestation verify spin-life-x86_64-unknown-linux-gnu.tar.gz -R scottschreckengaust/life
+gh release download v0.1.0 -R scottschreckengaust/life -p 'spin-life-x86_64-unknown-linux-musl.*'
+sha256sum -c spin-life-x86_64-unknown-linux-musl.sha256
+gh attestation verify spin-life-x86_64-unknown-linux-musl.tar.gz -R scottschreckengaust/life
 ```
 
 For the crate itself, Cargo already checks integrity for you: the crates.io index records each version's SHA-256,
@@ -226,7 +226,7 @@ and each stage has to pass before the next one starts:
 |---|---|
 | **plan** | the version is new: not tagged, not on crates.io |
 | **draft** | a *draft* GitHub Release, pinned to that commit (no tag yet, nothing public) |
-| **build** | binaries for Linux x86_64 and arm64, macOS arm64 and Windows, each with a `.sha256` and provenance, uploaded to the draft |
+| **build** | static (musl) binaries for Linux x86_64 and arm64, plus macOS arm64 and Windows, each with a `.sha256` and provenance, uploaded to the draft |
 | **crate** | the `.crate` crates.io will get, with a `.sha256` and provenance, uploaded to the draft |
 | **test** | on each OS, the draft's *downloaded* assets pass checksum and provenance checks, then the smoke test and the golden outputs in `tests/golden` |
 | **publish** | `cargo publish` via trusted publishing, after checking that the bytes about to be uploaded are the attested ones |
