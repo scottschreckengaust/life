@@ -51,6 +51,7 @@ jobs:
     outputs:
       go: ${{ steps.plan.outputs.go }}
       published: ${{ steps.plan.outputs.published }}
+      prerelease: ${{ steps.plan.outputs.prerelease }}
       name: ${{ steps.plan.outputs.name }}
       version: ${{ steps.plan.outputs.version }}
       tag: ${{ steps.plan.outputs.tag }}
@@ -70,6 +71,8 @@ jobs:
           name=$(jq -r '.packages[0].name' <<<"$meta")
           version=$(jq -r '.packages[0].version' <<<"$meta")
           rehearsal=false; [[ "$REF" == refs/heads/main ]] || rehearsal=true
+          # A SemVer pre-release (0.2.0-rc.1, -beta.2, ...) ships as a GitHub prerelease, never "latest".
+          prerelease=false; [[ "$version" == *-* ]] && prerelease=true
           # Rehearsal tags live outside v* so the rule protecting v* tags doesn't stop cleanup.
           if $rehearsal; then tag="rehearsal/$version.$RUN.$ATTEMPT"; else tag="v$version"; fi
           go=true
@@ -90,8 +93,8 @@ jobs:
             echo "::notice::$name $version is already on crates.io; publish will be skipped"
           fi
           $go || echo "::notice::nothing to release: the next release PR will bump the version"
-          { echo "go=$go"; echo "published=$published"; echo "name=$name"; echo "version=$version"; echo "tag=$tag"; echo "rehearsal=$rehearsal"; } >>"$GITHUB_OUTPUT"
-          echo "### $tag (rehearsal: $rehearsal, go: $go)" >>"$GITHUB_STEP_SUMMARY"
+          { echo "go=$go"; echo "published=$published"; echo "prerelease=$prerelease"; echo "name=$name"; echo "version=$version"; echo "tag=$tag"; echo "rehearsal=$rehearsal"; } >>"$GITHUB_OUTPUT"
+          echo "### $tag (rehearsal: $rehearsal, prerelease: $prerelease, go: $go)" >>"$GITHUB_STEP_SUMMARY"
 
   draft:
     needs: plan
@@ -157,7 +160,7 @@ jobs:
           tag_name: ${{ needs.plan.outputs.tag }}
           name: ${{ needs.plan.outputs.name }} ${{ needs.plan.outputs.tag }}
           draft: true
-          prerelease: ${{ needs.plan.outputs.rehearsal }}
+          prerelease: ${{ needs.plan.outputs.rehearsal == 'true' || needs.plan.outputs.prerelease == 'true' }}
           body_path: notes.md
 
   build:
@@ -432,7 +435,8 @@ jobs:
         with:
           tag_name: ${{ needs.plan.outputs.tag }}
           draft: false
-          make_latest: true
+          prerelease: ${{ needs.plan.outputs.prerelease }}
+          make_latest: ${{ needs.plan.outputs.prerelease == 'true' && 'false' || 'true' }}
       - name: start release-plz for anything merged while this ran
         if: needs.plan.outputs.rehearsal != 'true'
         run: gh workflow run release-plz.yml -R "$GITHUB_REPOSITORY" --ref main

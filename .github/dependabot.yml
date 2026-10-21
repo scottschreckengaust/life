@@ -1,0 +1,21 @@
+# Keeps the commit-pinned actions current: one grouped PR a week, titled
+# "ci: bump ..." so it passes the PR-title check and never cuts a release by itself.
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    commit-message:
+      prefix: ci
+    groups:
+      actions:
+        patterns: ["*"]
+  # Zero dependencies today; this is here so a future dependency gets watched too.
+  - package-ecosystem: cargo
+    directory: /
+    schedule:
+      interval: weekly
+    commit-message:
+      prefix: fix
+      prefix-development: ci

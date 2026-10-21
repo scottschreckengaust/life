@@ -252,6 +252,11 @@ start, so later merges can't get into the release or break it. They simply go in
 **Re-running is safe.** "Re-run all jobs" picks up where a failed run stopped: the tag, the draft and a
 crates.io upload are reused, never duplicated.
 
+**Release candidates:** set `version = "0.2.0-rc.1"` in a PR to start them. From then on release-plz bumps
+only the last number (`rc.2`, `rc.3`, …), and each ships as a GitHub *prerelease*, never "latest". `cargo install
+spin-life` keeps giving the latest stable version unless someone asks for `--version 0.2.0-rc.2`. Set
+`version = "0.2.0"` in a PR to finish.
+
 **Rehearsals:** push to any `release/**` branch to run the whole pipeline without releasing. It creates a real
 `rehearsal/…` tag (proving tag creation works), a throwaway prerelease draft and `cargo publish --dry-run`, then
 deletes the tag and draft.
