@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.2](https://github.com/scottschreckengaust/life/compare/v0.1.1...v0.1.2) - 2026-10-21
+
+### Added
+
+- say how long a real-time run will take ([#6](https://github.com/scottschreckengaust/life/pull/6))
+
+### Other
+
+- run the release train as github-actions[bot], no App or token ([#7](https://github.com/scottschreckengaust/life/pull/7))
+- Dependabot for pinned actions; release candidates ship as prereleases ([#5](https://github.com/scottschreckengaust/life/pull/5))
+- release PRs from conventional commits, cut after 6 quiet hours
+
 ## [0.1.1](https://github.com/scottschreckengaust/life/compare/v0.1.0...v0.1.1) - 2026-10-21
 
 ### Fixed
