@@ -50,5 +50,8 @@ jobs:
           persist-credentials: false
       - name: actionlint (findings show up as annotations on the PR)
         run: |
-          bash <(curl -fsSL https://raw.githubusercontent.com/rhysd/actionlint/v1.7.12/scripts/download-actionlint.bash) 1.7.12
-          ./actionlint -format '{{range $err := .}}::error file={{$err.Filepath}},line={{$err.Line}},col={{$err.Column}}::{{$err.Message}}{{"\n"}}{{end}}'
+          bash <(curl -fsSL https://raw.githubusercontent.com/rhysd/actionlint/v1.7.12/scripts/download-actionlint.bash) 1.7.12 2>&1 | tail -3
+          out=$(./actionlint -oneline 2>&1) && exit 0
+          echo "$out"
+          while IFS= read -r line; do echo "::error::$line"; done <<<"$out"
+          exit 1
