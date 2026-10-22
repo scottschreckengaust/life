@@ -26,7 +26,7 @@ echo "::group::golden output"
 diff --strip-trailing-cr "$golden/scott-chaos.txt" <("$bin" chaos --instant --quiet)
 diff --strip-trailing-cr "$golden/agent-incident.txt" <("$bin" incident -p agent -i -q)
 diff --strip-trailing-cr "$golden/parent-teething.txt" <("$bin" teething -p parent -i -q)
-diff --strip-trailing-cr "$golden/scott-chaos.json" <("$bin" chaos -i -f json)
+diff --strip-trailing-cr "$golden/scott-chaos.json" <("$bin" chaos -i -f json | sed "s/\"spin_life\":\"$version\"/\"spin_life\":\"VERSION\"/")
 echo "matches tests/golden"
 echo "::endgroup::"
 
