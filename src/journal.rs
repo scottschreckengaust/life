@@ -191,6 +191,59 @@ impl Journal {
     }
 
     /// The table, the timeline, and a one-line verdict.
+    /// The journal as JSON object members (`"signal"`, `"activities"`, `"days"`, `"totals"`,
+    /// `"spans"`, `"diary"`), each preceded by a comma, for appending to an object that already
+    /// has at least one member. `spin-life run --format json` wraps them with the run's metadata.
+    pub fn to_json(&self, out: &mut String) {
+        use crate::json::{array, object, Obj};
+        let all = self.activities();
+        let mut o = Obj::continuing(out, false);
+        o.str("signal", &self.signal);
+        array(o.key("activities"), &all, |out, &a| {
+            object(out, |o| {
+                o.str("name", self.name(a));
+                o.str("glyph", &self.glyph(a).to_string());
+                o.bool("pursuit", matches!(a, Activity::Pursuit(_)));
+            })
+        });
+        let days: Vec<DaySummary> = (1..=self.days()).map(|d| self.day(d)).collect();
+        let hours = |out: &mut String, h: &dyn Fn(&str) -> f64| {
+            object(out, |o| all.iter().for_each(|&a| o.num(self.name(a), h(self.name(a)))))
+        };
+        array(o.key("days"), &days, |out, d| {
+            object(out, |o| {
+                o.int("day", d.day);
+                hours(o.key("hours"), &|n| d.hours(n));
+                o.int("dreams", d.tally.dreams);
+                o.bool("signal", d.tally.signal);
+                o.int("coffee", d.tally.coffee);
+                o.int("wakeups", d.tally.wakeups);
+            })
+        });
+        object(o.key("totals"), |o| {
+            hours(o.key("hours"), &|n| days.iter().map(|d| d.hours(n)).sum());
+            o.int("dreams", days.iter().map(|d| d.tally.dreams).sum::<u32>());
+            o.int("signals", days.iter().filter(|d| d.tally.signal).count());
+            o.int("coffee", days.iter().map(|d| d.tally.coffee).sum::<u32>());
+            o.int("wakeups", days.iter().map(|d| d.tally.wakeups).sum::<u32>());
+        });
+        array(o.key("spans"), &self.spans, |out, s| {
+            object(out, |o| {
+                o.int("day", s.day);
+                o.str("what", self.name(s.what));
+                o.num("start", s.start);
+                o.num("end", s.end);
+            })
+        });
+        array(o.key("diary"), &self.moments, |out, m| {
+            object(out, |o| {
+                o.num("at", m.at);
+                o.str("when", &hhmm(m.at));
+                o.str("note", &m.note);
+            })
+        });
+    }
+
     pub fn report(&self) -> String {
         let pursuits: Vec<&str> = self.pursuits.iter().map(|p| p.0.as_str()).collect();
         let mut cols: Vec<String> =

@@ -25,6 +25,7 @@
 
 mod alarm;
 mod journal;
+pub mod json;
 mod macros;
 pub mod rt;
 pub mod rules;

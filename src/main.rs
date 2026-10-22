@@ -1,4 +1,4 @@
-use spin_life::{rt::Mode, Life, Rules, Scenario, PRESETS};
+use spin_life::{json, rt::Mode, Life, Rules, Scenario, PRESETS};
 use std::{process::exit, time::Duration};
 
 const USAGE: &str = "\
@@ -15,9 +15,14 @@ OPTIONS:
   -L, --life FILE    your rules (a .life.toml file)
   -p, --preset NAME  a built-in life instead (default: scott)
   -d, --days N       ignore scenarios; live N ordinary days
-  -s, --scale SECS   wall-clock seconds per simulated hour (default: 1, hours become seconds)
+  -x, --speed-up N   run N times faster than real life (default: 3600, an hour per second;
+                     1 = real time)
   -i, --instant      virtual time: skip straight to the next thing that happens
+  -f, --format FMT   text (default) or json: one JSON document on stdout, nothing else
   -q, --quiet        no diary, just the report";
+
+/// An hour per second.
+const SPEED_UP: f64 = 3600.0;
 
 #[derive(Default)]
 struct Args {
@@ -26,13 +31,28 @@ struct Args {
     life: Option<String>,
     preset: Option<String>,
     days: Option<usize>,
-    scale: Option<f64>,
+    /// How many times faster than real life; `None` is the default, [`SPEED_UP`].
+    speed_up: Option<f64>,
     instant: bool,
+    format: Format,
     quiet: bool,
+}
+
+#[derive(Default, Clone, Copy, PartialEq)]
+enum Format {
+    #[default]
+    Text,
+    Json,
 }
 
 fn main() {
     let a = parse_args();
+    if a.instant && a.speed_up.is_some() {
+        fail("--instant and --speed-up don't mix: pick one")
+    }
+    if a.format != Format::Text && !matches!(a.cmd.as_deref(), None | Some("run")) {
+        fail("--format only applies to run")
+    }
     match a.cmd.as_deref().unwrap_or("run") {
         "presets" => {
             for (name, about, _) in PRESETS {
@@ -84,11 +104,57 @@ fn run(a: &Args) {
             rules.scenario("week").or(rules.scenarios.first()).cloned().unwrap_or_else(|| Scenario::plain(7))
         }
     };
-    let mode = match (a.instant, a.scale) {
-        (true, _) => Mode::Virtual,
-        (false, s) => Mode::RealTime(Duration::from_secs_f64(s.unwrap_or(1.0))),
+    // Virtual time skips straight to the next thing that happens; otherwise the wall clock
+    // runs `speed_up` times faster than real life.
+    let speed_up = (!a.instant).then(|| a.speed_up.unwrap_or(SPEED_UP));
+    let mode = match speed_up {
+        None => Mode::Virtual,
+        Some(x) => Mode::RealTime(Duration::from_secs_f64(3600.0 / x)),
     };
-    let pace = if a.instant { "instant".to_string() } else { format!("1h = {}s", a.scale.unwrap_or(1.0)) };
+    // Each day runs from one morning's alarm to the next: one spin of the earth.
+    let hint = speed_up.map(|x| {
+        let secs = scenario.days as f64 * spin_life::EARTH_SPIN * 3600.0 / x;
+        format!(
+            "⏱  about {} of real time; add --instant to skip ahead, or --speed-up to go faster",
+            wall(secs)
+        )
+    });
+    if a.format == Format::Json {
+        if let Some(hint) = hint {
+            eprintln!("{hint}");
+        }
+        let journal = Life::new(&rules, &scenario).echo(false).run(mode);
+        let mut out = String::from("{");
+        let mut o = json::Obj::continuing(&mut out, true);
+        o.str("spin_life", env!("CARGO_PKG_VERSION"));
+        o.str("life", &rules.name);
+        match &rules.motto {
+            Some(m) => o.str("motto", m),
+            None => o.null("motto"),
+        }
+        json::object(o.key("scenario"), |o| {
+            o.str("name", &scenario.name);
+            o.str("about", &scenario.about);
+            o.int("days", scenario.days);
+            o.int("start", scenario.start);
+        });
+        match speed_up {
+            Some(x) => o.num("speed_up", x),
+            None => o.null("speed_up"),
+        }
+        journal.to_json(&mut out);
+        out.push('}');
+        println!("{out}");
+        return;
+    }
+    let pace = speed_up.map_or_else(
+        || "instant".to_string(),
+        |x| {
+            let mut n = String::new();
+            json::number(&mut n, x);
+            format!("{n}× real time")
+        },
+    );
     let plural = if scenario.days == 1 { "" } else { "s" };
     if let Some(motto) = &rules.motto {
         println!("“{motto}”");
@@ -97,10 +163,8 @@ fn run(a: &Args) {
         "🌍 {} / {}: {} ({} day{plural}, {pace})",
         rules.name, scenario.name, scenario.about, scenario.days
     );
-    if !a.instant {
-        // Each day runs from one morning's alarm to the next: one spin of the earth.
-        let secs = scenario.days as f64 * spin_life::EARTH_SPIN * a.scale.unwrap_or(1.0);
-        println!("⏱  about {} of real time; add --instant to skip ahead, or --scale to speed up", wall(secs));
+    if let Some(hint) = hint {
+        println!("{hint}");
     }
     println!();
     let journal = Life::new(&rules, &scenario).echo(!a.quiet).run(mode);
@@ -143,16 +207,24 @@ fn parse_args() -> Args {
                 exit(0)
             }
             "-i" | "--instant" => a.instant = true,
+            "-f" | "--format" => {
+                a.format = match value(&arg, &mut it).as_str() {
+                    "text" => Format::Text,
+                    "json" => Format::Json,
+                    _ => fail("--format is text or json"),
+                }
+            }
             "-q" | "--quiet" => a.quiet = true,
             "-L" | "--life" => a.life = Some(value(&arg, &mut it)),
             "-p" | "--preset" => a.preset = Some(value(&arg, &mut it)),
             "-d" | "--days" => {
                 a.days = Some(value(&arg, &mut it).parse().unwrap_or_else(|_| fail("--days needs a number")))
             }
-            "-s" | "--scale" => match value(&arg, &mut it).parse::<f64>() {
-                Ok(s) if s > 0.0 => a.scale = Some(s),
-                _ => fail("--scale needs a positive number of seconds per hour"),
+            "-x" | "--speed-up" => match value(&arg, &mut it).parse::<f64>() {
+                Ok(x) if x > 0.0 && x.is_finite() => a.speed_up = Some(x),
+                _ => fail("--speed-up needs a positive number (3600 = an hour per second)"),
             },
+            "-s" | "--scale" => fail("--scale is gone: use --speed-up N (--scale S was --speed-up 3600/S)"),
             s if s.starts_with('-') => fail(&format!("unknown option `{s}`")),
             "run" | "list" | "presets" | "init" | "check" if a.cmd.is_none() && a.target.is_none() => {
                 a.cmd = Some(arg)
