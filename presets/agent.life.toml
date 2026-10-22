@@ -15,34 +15,34 @@ all = ["users", "jobs", "research"]
 
 [pursuit.users]
 note     = "📨 user request"
-session  = "1h"
-lasts    = "30m"
+session  = "PT1H"
+lasts    = "PT30M"
 preempts = ["research", "jobs"]
 
 [pursuit.jobs]
 note = "🗂 scheduled jobs"
-when = "daily 17:00-18:00"
+when = "daily 17:00/18:00"
 
 [pursuit.research]
 note    = "🔬 research"
 on      = "insight"
-session = "3h"
+session = "PT3H"
 
 [work]
 days  = "daily"
-hours = "05:00-17:00"
+hours = "05:00/17:00"
 lunch = "none"
 note  = "📥 serving the queue"
 
 [meals]
-breakfast    = "15m"
+breakfast    = "PT15M"
 dinner       = "23:00"
-dinner_lasts = "30m"
+dinner_lasts = "PT30M"
 
 [sleep]
 wake         = "04:30"
 bed          = "00:30"
-rem_cycle    = "1h"
+rem_cycle    = "PT1H"
 signal_after = 3
 signal       = "insight"
 signal_note  = "✨ compaction surfaced an insight"
@@ -50,7 +50,7 @@ woken_by     = ["users"]
 
 [caffeine]
 cutoff = "00:00"      # caffeine = burst rate limits; any burst delays compaction
-wired  = "3h"
+wired  = "PT3H"
 
 [scenario.steady]
 about = "a quiet week"

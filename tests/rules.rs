@@ -5,7 +5,7 @@ use spin_life::{rt::Mode, toml, Journal, Life, Rules, Scenario};
 /// A minimal life: one pursuit, defaults for everything else.
 const MINIMAL: &str = r#"
 [pursuit.reading]
-when = "daily 18:00-21:00"
+when = "daily 18:00/21:00"
 "#;
 
 fn live(src: &str, scenario: &str) -> Journal {
@@ -45,13 +45,13 @@ fn a_minimal_life_runs_on_defaults() {
 fn a_life_with_a_job() {
     let src = format!("{MINIMAL}\n[work]\ndays = \"mon-fri\"\n");
     let j = live(&src, "none");
-    hours(&j, 1, "work", 7.0); // 09:00-17:00 minus lunch, by default
+    hours(&j, 1, "work", 7.0); // 09:00/17:00 minus lunch, by default
     hours(&j, 1, "reading", 3.0);
 }
 
 #[test]
 fn workdays_need_a_job() {
-    rejects("[pursuit.a]\nwhen = \"workdays 18:00-20:00\"", "needs a [work] table");
+    rejects("[pursuit.a]\nwhen = \"workdays 18:00/20:00\"", "needs a [work] table");
 }
 
 #[test]
@@ -63,9 +63,9 @@ fn not_everyone_puts_people_first() {
         [pursuit.geek]
         on = "idea"
         [pursuit.people]
-        when = "18:00-20:00"
+        when = "18:00/20:00"
         [pursuit.surf]
-        session = "2h"
+        session = "PT2H"
         [work]
         days = "mon-fri"
         [sleep]
@@ -90,10 +90,10 @@ fn weekend_priorities_can_differ() {
 fn protected_pursuits_are_never_interrupted() {
     let src = r#"
         [pursuit.focus]
-        when = "17:00-19:00"
+        when = "17:00/19:00"
         protected = true
         [pursuit.pager]
-        session = "1h"
+        session = "PT1H"
         preempts = ["focus"]
         [scenario.paged]
         events = [{ day = 1, at = "17:30", pursuit = "pager", urgent = true }]
@@ -121,7 +121,7 @@ fn scheduled_windows_can_preempt() {
 fn you_choose_what_wakes_you() {
     let src = r#"
         [pursuit.kids]
-        session = "1h"
+        session = "PT1H"
         [sleep]
         woken_by = ["kids"]
         [scenario.night]
@@ -143,7 +143,7 @@ fn signals_need_enough_sleep() {
     let src = r#"
         [pursuit.write]
         on = "muse"
-        session = "1h"
+        session = "PT1H"
         [sleep]
         bed = "23:30"
         signal = "muse"
@@ -162,10 +162,10 @@ fn signals_need_enough_sleep() {
 fn caffeine_rules_are_yours() {
     let src = r#"
         [pursuit.x]
-        when = "18:00-19:00"
+        when = "18:00/19:00"
         [caffeine]
         cutoff = "18:00"
-        wired = "1h"
+        wired = "PT1H"
         [scenario.cup]
         events = [{ day = 1, at = "17:00", coffee = 1 }, { day = 1, at = "18:30", coffee = 1 }]
     "#;
@@ -198,8 +198,25 @@ fn unknown_pursuits_are_named() {
 
 #[test]
 fn bad_values_say_what_they_should_be() {
-    rejects("[pursuit.a]\nsession = \"two hours\"", "not a duration like \"1h30m\"");
-    rejects("[pursuit.a]\nwhen = \"18:00 to 20:00\"", "window like \"18:00-20:00\"");
+    rejects("[pursuit.a]\nsession = \"two hours\"", "is not an ISO 8601 duration; use one like PT1H30M");
+    rejects("[pursuit.a]\nwake = 1", "unknown key");
+    rejects("[pursuit.a]\n[sleep]\nwake = \"6:30\"", "sleep.wake: `6:30` is not an ISO 8601 time of day");
+    rejects("[pursuit.a]\nlasts = \"P1M\"", "years and months aren't fixed lengths");
+    rejects("[pursuit.a]\nwhen = \"18:00 to 20:00\"", "window like \"18:00/20:00\"");
+}
+
+#[test]
+fn old_formats_point_to_iso() {
+    rejects(
+        "[pursuit.a]\n[sleep]\nrem_cycle = \"1h30m\"",
+        "sleep.rem_cycle: `1h30m` is not an ISO 8601 duration; use one like PT1H30M",
+    );
+    rejects("[pursuit.a]\nsession = \"30m\"", "pursuit.a.session: `30m` is not an ISO 8601 duration");
+    rejects(
+        "[pursuit.a]\nwhen = \"daily 18:00-20:00\"",
+        "pursuit.a.when: `18:00-20:00` is not an ISO 8601 interval; use an ISO 8601 interval like 18:00/20:00",
+    );
+    rejects("[pursuit.a]\n[work]\nhours = \"09:00-17:00\"", "like 09:00/17:00");
     rejects("[sleep]\nwake = 6\n[pursuit.a]", "should be a string");
     rejects("[pursuit.a]\n[scenario.s]\nevents = [{ day = 1 }]", "needs one of");
     rejects("[pursuit.sleep]", "built in");

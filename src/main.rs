@@ -1,4 +1,4 @@
-use spin_life::{json, rt::Mode, Life, Rules, Scenario, PRESETS};
+use spin_life::{hhmm, iso, json, rt::Mode, Life, Rules, Scenario, PRESETS};
 use std::{process::exit, time::Duration};
 
 const USAGE: &str = "\
@@ -18,6 +18,10 @@ OPTIONS:
   -x, --speed-up N   run N times faster than real life (default: 3600, an hour per second;
                      1 = real time)
   -i, --instant      virtual time: skip straight to the next thing that happens
+      --from WHEN    start the run here: a time on day 1 (06:30:00) or an ISO 8601 duration
+                     from midnight of day 1 (P2DT18H is day 3, 18:00) (default: first alarm)
+      --until WHEN   stop the run here (default: the morning after the last day)
+      --for DUR      stop the run DUR after --from, an ISO 8601 duration like PT2.5S
   -f, --format FMT   text (default) or json: one JSON document on stdout, nothing else
   -q, --quiet        no diary, just the report";
 
@@ -36,6 +40,9 @@ struct Args {
     instant: bool,
     format: Format,
     quiet: bool,
+    from: Option<f64>,
+    until: Option<f64>,
+    lasts: Option<f64>,
 }
 
 #[derive(Default, Clone, Copy, PartialEq)]
@@ -52,6 +59,14 @@ fn main() {
     }
     if a.format != Format::Text && !matches!(a.cmd.as_deref(), None | Some("run")) {
         fail("--format only applies to run")
+    }
+    if (a.from.is_some() || a.until.is_some() || a.lasts.is_some())
+        && !matches!(a.cmd.as_deref(), None | Some("run"))
+    {
+        fail("--from/--until/--for only apply to run")
+    }
+    if a.until.is_some() && a.lasts.is_some() {
+        fail("--until and --for don't mix: pick one")
     }
     match a.cmd.as_deref().unwrap_or("run") {
         "presets" => {
@@ -104,6 +119,25 @@ fn run(a: &Args) {
             rules.scenario("week").or(rules.scenarios.first()).cloned().unwrap_or_else(|| Scenario::plain(7))
         }
     };
+    // The window: flags override the scenario's own.
+    let life = Life::new(&rules, &scenario);
+    let (start, end) = (life.starts_at(), life.ends_at());
+    let from = a.from.or(scenario.from);
+    let until = a.until.or(a.lasts.map(|d| from.unwrap_or(start) + d)).or(scenario.until);
+    if from.is_some_and(|f| f < start - 1e-9) {
+        fail(&format!("--from is before the first alarm ({})", hhmm(start)))
+    }
+    if until.is_some_and(|u| u > end + 1e-9) {
+        fail(&format!("--until is after the run ends ({})", hhmm(end)))
+    }
+    if until.is_some_and(|u| u <= from.unwrap_or(start)) {
+        fail("--until must be after --from")
+    }
+    if from.is_some_and(|f| f >= end) {
+        fail(&format!("--from is after the run ends ({})", hhmm(end)))
+    }
+    let window = (from.is_some() || until.is_some()).then(|| (from.unwrap_or(start), until.unwrap_or(end)));
+    let life = life.window(from, until);
     // Virtual time skips straight to the next thing that happens; otherwise the wall clock
     // runs `speed_up` times faster than real life.
     let speed_up = (!a.instant).then(|| a.speed_up.unwrap_or(SPEED_UP));
@@ -113,7 +147,8 @@ fn run(a: &Args) {
     };
     // Each day runs from one morning's alarm to the next: one spin of the earth.
     let hint = speed_up.map(|x| {
-        let secs = scenario.days as f64 * spin_life::EARTH_SPIN * 3600.0 / x;
+        let (f, u) = window.unwrap_or((start, end));
+        let secs = (u - f) * 3600.0 / x;
         format!(
             "⏱  about {} of real time; add --instant to skip ahead, or --speed-up to go faster",
             wall(secs)
@@ -123,7 +158,7 @@ fn run(a: &Args) {
         if let Some(hint) = hint {
             eprintln!("{hint}");
         }
-        let journal = Life::new(&rules, &scenario).echo(false).run(mode);
+        let journal = life.echo(false).run(mode);
         let mut out = String::from("{");
         let mut o = json::Obj::continuing(&mut out, true);
         o.str("spin_life", env!("CARGO_PKG_VERSION"));
@@ -142,6 +177,13 @@ fn run(a: &Args) {
             Some(x) => o.num("speed_up", x),
             None => o.null("speed_up"),
         }
+        match window {
+            Some((f, u)) => json::object(o.key("window"), |o| {
+                o.num("from", f * 3600.0);
+                o.num("until", u * 3600.0);
+            }),
+            None => o.null("window"),
+        }
         journal.to_json(&mut out);
         out.push('}');
         println!("{out}");
@@ -155,6 +197,10 @@ fn run(a: &Args) {
             format!("{n}× real time")
         },
     );
+    let pace = match window {
+        Some((f, u)) => format!("{pace}, from {} until {}", hhmm(f), hhmm(u)),
+        None => pace,
+    };
     let plural = if scenario.days == 1 { "" } else { "s" };
     if let Some(motto) = &rules.motto {
         println!("“{motto}”");
@@ -167,7 +213,7 @@ fn run(a: &Args) {
         println!("{hint}");
     }
     println!();
-    let journal = Life::new(&rules, &scenario).echo(!a.quiet).run(mode);
+    let journal = life.echo(!a.quiet).run(mode);
     print!("{}", journal.report());
 }
 
@@ -215,6 +261,19 @@ fn parse_args() -> Args {
                 }
             }
             "-q" | "--quiet" => a.quiet = true,
+            "--from" => {
+                a.from =
+                    Some(iso::when(&value(&arg, &mut it)).unwrap_or_else(|e| fail(&format!("--from: {e}"))))
+            }
+            "--until" => {
+                a.until =
+                    Some(iso::when(&value(&arg, &mut it)).unwrap_or_else(|e| fail(&format!("--until: {e}"))))
+            }
+            "--for" => {
+                a.lasts = Some(
+                    iso::duration(&value(&arg, &mut it)).unwrap_or_else(|e| fail(&format!("--for: {e}"))),
+                )
+            }
             "-L" | "--life" => a.life = Some(value(&arg, &mut it)),
             "-p" | "--preset" => a.preset = Some(value(&arg, &mut it)),
             "-d" | "--days" => {

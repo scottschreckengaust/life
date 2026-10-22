@@ -91,11 +91,22 @@ pub struct Journal {
     /// Pursuit names and glyphs, from the life file.
     pub(crate) pursuits: Vec<(String, char)>,
     pub(crate) signal: String,
+    /// The days this journal covers: all of them, unless it was [clipped](Journal::clip).
+    pub(crate) first: usize,
+    pub(crate) last: usize,
 }
 
 impl Journal {
     pub(crate) fn new(days: usize, pursuits: Vec<(String, char)>, signal: String) -> Self {
-        Journal { spans: vec![], moments: vec![], tallies: vec![Tally::default(); days], pursuits, signal }
+        Journal {
+            spans: vec![],
+            moments: vec![],
+            tallies: vec![Tally::default(); days],
+            pursuits,
+            signal,
+            first: 1,
+            last: days,
+        }
     }
 
     pub(crate) fn mark(&mut self, day: usize, what: Activity, start: f64, end: f64) {
@@ -140,9 +151,32 @@ impl Journal {
         all
     }
 
-    /// How many days were lived.
+    /// How many days the journal covers.
     pub fn days(&self) -> usize {
-        self.tallies.len()
+        self.last + 1 - self.first
+    }
+
+    /// The day numbers the journal covers (1-based): every day of the scenario, or only the
+    /// ones a [window](Journal::clip) touches.
+    pub fn day_range(&self) -> std::ops::RangeInclusive<usize> {
+        self.first..=self.last
+    }
+
+    /// Keep only what happened in `[from, until)` (absolute hours): spans are cut to it,
+    /// diary lines outside it go, and the days it doesn't touch are left out.
+    pub fn clip(&mut self, from: f64, until: f64) {
+        for s in &mut self.spans {
+            s.start = s.start.max(from);
+            s.end = s.end.min(until);
+        }
+        self.spans.retain(|s| s.end - s.start > 1e-9);
+        self.moments.retain(|m| from <= m.at && m.at < until);
+        if let (Some(first), Some(last)) =
+            (self.spans.iter().map(|s| s.day).min(), self.spans.iter().map(|s| s.day).max())
+        {
+            self.first = first;
+            self.last = last;
+        }
     }
 
     /// Totals for day `day` (1-based).
@@ -173,9 +207,11 @@ impl Journal {
     /// One row per calendar day, two characters per hour.
     pub fn timeline(&self) -> String {
         let end = self.spans.iter().map(|s| s.end).fold(0.0, f64::max);
+        let start = self.spans.iter().map(|s| s.start).fold(f64::INFINITY, f64::min);
+        let first = if start.is_finite() { (start / EARTH_SPIN).floor() as usize + 1 } else { 1 };
         let rows = (end / EARTH_SPIN).ceil() as usize;
         let mut out = String::from("        0     3     6     9     12    15    18    21    24\n");
-        for d in 1..=rows {
+        for d in first..=rows {
             let row: String = (0..48)
                 .map(|k| {
                     let t = (d - 1) as f64 * EARTH_SPIN + k as f64 * 0.5 + 0.25;
@@ -191,6 +227,9 @@ impl Journal {
     }
 
     /// The table, the timeline, and a one-line verdict.
+    /// Span and diary times are seconds since midnight at the start of day 1; per-day totals
+    /// are hours.
+    ///
     /// The journal as JSON object members (`"signal"`, `"activities"`, `"days"`, `"totals"`,
     /// `"spans"`, `"diary"`), each preceded by a comma, for appending to an object that already
     /// has at least one member. `spin-life run --format json` wraps them with the run's metadata.
@@ -206,7 +245,7 @@ impl Journal {
                 o.bool("pursuit", matches!(a, Activity::Pursuit(_)));
             })
         });
-        let days: Vec<DaySummary> = (1..=self.days()).map(|d| self.day(d)).collect();
+        let days: Vec<DaySummary> = self.day_range().map(|d| self.day(d)).collect();
         let hours = |out: &mut String, h: &dyn Fn(&str) -> f64| {
             object(out, |o| all.iter().for_each(|&a| o.num(self.name(a), h(self.name(a)))))
         };
@@ -231,13 +270,13 @@ impl Journal {
             object(out, |o| {
                 o.int("day", s.day);
                 o.str("what", self.name(s.what));
-                o.num("start", s.start);
-                o.num("end", s.end);
+                o.num("start", s.start * 3600.0);
+                o.num("end", s.end * 3600.0);
             })
         });
         array(o.key("diary"), &self.moments, |out, m| {
             object(out, |o| {
-                o.num("at", m.at);
+                o.num("at", m.at * 3600.0);
                 o.str("when", &hhmm(m.at));
                 o.str("note", &m.note);
             })
@@ -256,7 +295,7 @@ impl Journal {
             let _ = write!(out, "{c:>width$}");
         }
         out.push('\n');
-        for d in 1..=self.days() {
+        for d in self.day_range() {
             let s = self.day(d);
             let h = |name: &str| format!("{:.1}h", s.hours(name));
             let mut cells = vec![
@@ -277,9 +316,9 @@ impl Journal {
         }
         let _ = writeln!(out, "(each row is a day plus the night after it)\n");
         out.push_str(&self.timeline());
-        let total = |name: &str| (1..=self.days()).map(|d| self.day(d).hours(name)).sum::<f64>();
+        let total = |name: &str| self.day_range().map(|d| self.day(d).hours(name)).sum::<f64>();
         let spent: Vec<String> = pursuits.iter().map(|p| format!("{:.0}h {p}", total(p))).collect();
-        let signals = self.tallies.iter().filter(|t| t.signal).count();
+        let signals = self.day_range().filter(|&d| self.tallies[d - 1].signal).count();
         let _ = writeln!(
             out,
             "\n{} spins of the earth: {}, {:.0}h asleep, {signals} {}(s). Last entry {}.",

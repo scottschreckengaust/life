@@ -11,6 +11,9 @@
 //! * **woken_by**: what may ring your alarm at night
 //! * **caffeine**: when coffee turns sleep into a spin loop
 //!
+//! Times (`"06:30:02.5"`), durations (`"PT1H30M"`) and windows (`"18:00/20:00"`) are ISO 8601,
+//! read by [`crate::iso`]. A scenario may also set a run window: `from`, and `until` or `for`.
+//!
 //! See `presets/` for complete files, starting with `scott.life.toml`.
 
 use crate::toml::{self, Table, Value};
@@ -210,6 +213,10 @@ pub struct Scenario {
     pub start: usize,
     pub days: usize,
     pub events: Vec<Event>,
+    /// Report only from here (absolute hours since midnight of day 1); `None` is the first alarm.
+    pub from: Option<f64>,
+    /// Stop here; `None` is the morning after the last day.
+    pub until: Option<f64>,
 }
 
 impl Scenario {
@@ -221,6 +228,8 @@ impl Scenario {
             start: 0,
             days,
             events: vec![],
+            from: None,
+            until: None,
         }
     }
 }
@@ -298,7 +307,7 @@ impl Rules {
                 None => [true, true, true, true, true, false, false],
             };
             let (start, end) =
-                window(&w.str("hours")?.unwrap_or_else(|| "09:00-17:00".into()), "work.hours")?;
+                window(&w.str("hours")?.unwrap_or_else(|| "09:00/17:00".into()), "work.hours")?;
             let lunch = match w.str("lunch")? {
                 Some(s) if s == "none" => None,
                 Some(s) => Some(window(&s, "work.lunch")?),
@@ -332,7 +341,7 @@ impl Rules {
                     .iter()
                     .map(|v| match v {
                         Value::Str(s) => when(s, workdays, &format!("{ctx}.when")),
-                        _ => fail(format!("{ctx}.when: expected strings like \"workdays 18:00-20:00\"")),
+                        _ => fail(format!("{ctx}.when: expected strings like \"workdays 18:00/20:00\"")),
                     })
                     .collect::<Result<_>>()?,
                 Some(v) => {
@@ -472,8 +481,17 @@ impl Rules {
                         )?);
                     }
                 }
+                let (from, until) = run_window(&mut f, &ctx)?;
                 f.done()?;
-                scenarios.push(Scenario { name: sname, about, start, days: days as usize, events });
+                scenarios.push(Scenario {
+                    name: sname,
+                    about,
+                    start,
+                    days: days as usize,
+                    events,
+                    from,
+                    until,
+                });
             }
         }
         root.done()?;
@@ -513,7 +531,9 @@ fn event(mut f: Fields, days: usize, index: &dyn Fn(&str, &str) -> Result<usize>
     }
     let day = day as usize;
     let at = f.str("at")?.map(|s| time(&s, &format!("{ctx}.at"))).transpose()?;
-    let need_at = || at.ok_or_else(|| RuleError(format!("{ctx}: this event needs `at = \"HH:MM\"`")));
+    let need_at = || {
+        at.ok_or_else(|| RuleError(format!("{ctx}: this event needs `at = \"06:30\"` (an ISO 8601 time)")))
+    };
     let note = f.str("note")?;
     let ev = if let Some(p) = f.str("pursuit")? {
         let at = need_at()?;
@@ -640,6 +660,28 @@ impl Fields {
     }
 }
 
+/// A scenario's `from`, and `until` or `for`, in absolute hours.
+fn run_window(f: &mut Fields, ctx: &str) -> Result<(Option<f64>, Option<f64>)> {
+    let at = |s: String, k: &str| crate::iso::when(&s).map_err(|e| RuleError(format!("{ctx}.{k}: {e}")));
+    let from = f.str("from")?.map(|s| at(s, "from")).transpose()?;
+    let until = f.str("until")?.map(|s| at(s, "until")).transpose()?;
+    let lasts = f.str("for")?.map(|s| duration(&s, &format!("{ctx}.for"))).transpose()?;
+    let until = match (until, lasts) {
+        (Some(_), Some(_)) => return fail(format!("{ctx}: `until` and `for` don't mix: pick one")),
+        (None, Some(d)) => match from {
+            Some(f) => Some(f + d),
+            None => return fail(format!("{ctx}.for needs a `from` to count from")),
+        },
+        (u, None) => u,
+    };
+    if let (Some(f), Some(u)) = (from, until) {
+        if u <= f {
+            return fail(format!("{ctx}: `until` must be after `from`"));
+        }
+    }
+    Ok((from, until))
+}
+
 fn time_or(f: &mut Fields, k: &str, default: f64) -> Result<f64> {
     let key = f.key(k);
     f.str(k)?.map_or(Ok(default), |s| time(&s, &key))
@@ -650,47 +692,20 @@ fn dur_or(f: &mut Fields, k: &str, default: f64) -> Result<f64> {
     f.str(k)?.map_or(Ok(default), |s| duration(&s, &key))
 }
 
-/// `"06:30"` → 6.5. Hours up to 47 are allowed for "after midnight".
+/// An ISO 8601 time of day, `"06:30"` or `"06:30:02.5"`, as hours. See [`crate::iso::time`].
 pub fn time(s: &str, ctx: &str) -> Result<f64> {
-    let parsed = s.trim().split_once(':').and_then(|(h, m)| {
-        let (h, m) = (h.parse::<u32>().ok()?, m.parse::<u32>().ok()?);
-        (h < 48 && m < 60).then_some(f64::from(h) + f64::from(m) / 60.0)
-    });
-    parsed.ok_or_else(|| RuleError(format!("{ctx}: `{s}` is not a time like \"06:30\"")))
+    crate::iso::time(s).map_err(|e| RuleError(format!("{ctx}: {e}")))
 }
 
-/// `"1h30m"`, `"2h"`, `"45m"` → hours.
+/// An ISO 8601 duration, `"PT1H30M"` or `"PT2.5S"`, as hours. See [`crate::iso::duration`].
 pub fn duration(s: &str, ctx: &str) -> Result<f64> {
-    let bad = || RuleError(format!("{ctx}: `{s}` is not a duration like \"1h30m\""));
-    let (mut total, mut num, mut any) = (0.0, String::new(), false);
-    for c in s.trim().chars() {
-        match c {
-            '0'..='9' | '.' => num.push(c),
-            'h' | 'm' => {
-                let n: f64 = num.parse().map_err(|_| bad())?;
-                total += if c == 'h' { n } else { n / 60.0 };
-                num.clear();
-                any = true;
-            }
-            _ => return Err(bad()),
-        }
-    }
-    if !any || !num.is_empty() {
-        return Err(bad());
-    }
-    Ok(total)
+    crate::iso::duration(s).map_err(|e| RuleError(format!("{ctx}: {e}")))
 }
 
-/// `"18:00-20:00"`; an end before the start wraps past midnight.
+/// An ISO 8601 interval, `"18:00/20:00"` or `"09:00/PT8H"`; an end before the start wraps
+/// past midnight. See [`crate::iso::window`].
 pub fn window(s: &str, ctx: &str) -> Result<(f64, f64)> {
-    let Some((a, b)) = s.split_once('-') else {
-        return fail(format!("{ctx}: `{s}` is not a window like \"18:00-20:00\""));
-    };
-    let (start, mut end) = (time(a, ctx)?, time(b, ctx)?);
-    if end <= start {
-        end += 24.0;
-    }
-    Ok((start, end))
+    crate::iso::window(s).map_err(|e| RuleError(format!("{ctx}: {e}")))
 }
 
 fn weekday(s: &str) -> Option<usize> {
@@ -738,13 +753,13 @@ fn days(v: &Value, workdays: Option<Days>, ctx: &str) -> Result<Days> {
     Ok(out)
 }
 
-/// `"workdays 18:00-20:00"`, `"sat,sun 07:00-08:30"`, or just `"18:00-20:00"` (daily).
+/// `"workdays 18:00/20:00"`, `"sat,sun 07:00/08:30"`, or just `"18:00/20:00"` (daily).
 fn when(s: &str, workdays: Option<Days>, ctx: &str) -> Result<Window> {
     let s = s.trim();
     let (d, w) = s.rsplit_once(' ').unwrap_or(("daily", s));
-    if !w.contains('-') {
+    if !w.contains(['/', '-']) {
         return fail(format!(
-            "{ctx}: `{s}` is not a window like \"18:00-20:00\" or \"workdays 18:00-20:00\""
+            "{ctx}: `{s}` is not a window like \"18:00/20:00\" or \"workdays 18:00/20:00\""
         ));
     }
     let d = days(&Value::Str(d.to_string()), workdays, ctx).map_err(|e| match workdays {
