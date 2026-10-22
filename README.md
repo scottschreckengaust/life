@@ -41,8 +41,35 @@ spin-life teething -p parent -i -q # someone else's week, report only
 
 spin-life init > me.life.toml      # start your own from the reference life
 spin-life check me.life.toml       # catch typos and bad times
-spin-life --life me.life.toml --days 7 --scale 0.1
+spin-life --life me.life.toml --days 7 --speed-up 36000
 ```
+
+Runs play out on the wall clock 3600 times faster than real life, an hour per second, wherever you run them.
+`--speed-up N` sets how much faster (`1` is real time), and `--instant` skips straight to the report.
+
+### Machine-readable output
+
+`--format json` prints one JSON document and nothing else, for agents, dashboards and scripts:
+
+```sh
+spin-life chaos -i -f json | jq '.totals.hours'
+```
+
+| field | what |
+|---|---|
+| `spin_life` | the version that wrote it |
+| `life`, `motto` | whose life (`motto` is `null` if there isn't one) |
+| `scenario` | `name`, `about`, `days`, `start` (the weekday of day 1, Monday = 0) |
+| `speed_up` | how many times faster than real life it ran, or `null` for `--instant` |
+| `signal` | what a good night's sleep produces (`idea` for the reference life) |
+| `activities` | `name`, `glyph` and `pursuit` (built-in or from the life file) for every activity, in report order |
+| `days` | per day: `hours` for every activity (the night after counts toward the day), `dreams`, `signal`, `coffee`, `wakeups` |
+| `totals` | the same, summed; `signals` counts the days that produced one |
+| `spans` | every stretch of time: `day`, `what`, `start`, `end` |
+| `diary` | every diary line: `at`, `when` (`d1 06:30`), `note` |
+
+Times are hours since midnight at the start of day 1, rounded to 3 decimal places. The output is compact, and
+the key order is fixed, so the same run always gives the same bytes.
 
 ## Write your rules
 
@@ -175,7 +202,7 @@ activity holds a `Drop` guard that writes its span to the journal when it ends *
 
 **What's virtual time?** When every task is waiting, the executor jumps the clock to the next timer instead of
 sleeping. A century of `rt::sleep` returns instantly, and every scenario produces the same journal every time
-(there are tests for both). `--scale` switches to wall-clock time with `park_timeout`, at roughly 0% CPU.
+(there are tests for both). Without `--instant`, it runs on the wall clock with `park_timeout`, at roughly 0% CPU.
 
 **`spin_loop()` inside async code?** In the [`motto` example](examples/motto.rs) it's the real thing: a hot spin
 that blocks the executor and burns a core until a real `std::thread` sets the flag. In the library, the spin is a
@@ -193,7 +220,8 @@ src/lib.rs       Life: morning, work, evening (biased select over your prioritie
 src/rt.rs        the executor: virtual/real-time clock, timers, spawn, select_biased, a one-permit Bell
 src/macros.rs    select! and join!
 src/alarm.rs     ALARM: AtomicBool + why it rang, with the orderings explained
-src/journal.rs   what happened: spans, diary, totals, timeline
+src/journal.rs   what happened: spans, diary, totals, timeline, JSON
+src/json.rs      just enough JSON writing for --format json
 src/main.rs      the CLI
 CHANGELOG.md     every release, written by release-plz from PR titles
 presets/         scott (the motto), parent, agent

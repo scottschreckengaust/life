@@ -26,6 +26,7 @@ echo "::group::golden output"
 diff --strip-trailing-cr "$golden/scott-chaos.txt" <("$bin" chaos --instant --quiet)
 diff --strip-trailing-cr "$golden/agent-incident.txt" <("$bin" incident -p agent -i -q)
 diff --strip-trailing-cr "$golden/parent-teething.txt" <("$bin" teething -p parent -i -q)
+diff --strip-trailing-cr "$golden/scott-chaos.json" <("$bin" chaos -i -f json)
 echo "matches tests/golden"
 echo "::endgroup::"
 
@@ -35,5 +36,5 @@ if "$bin" check "$work/bad.toml"; then echo "::error::a typo was accepted"; exit
 echo "::endgroup::"
 
 echo "::group::real time (hours as seconds, scaled down)"
-"$bin" run --days 1 --scale 0.01 --quiet | tail -1
+"$bin" run --days 1 --speed-up 360000 --quiet | tail -1
 echo "::endgroup::"

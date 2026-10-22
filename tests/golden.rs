@@ -5,6 +5,7 @@
 //!     cargo run -q -- chaos -i -q > tests/golden/scott-chaos.txt
 //!     cargo run -q -- incident -p agent -i -q > tests/golden/agent-incident.txt
 //!     cargo run -q -- teething -p parent -i -q > tests/golden/parent-teething.txt
+//!     cargo run -q -- chaos -i -f json > tests/golden/scott-chaos.json
 
 use std::process::Command;
 
@@ -34,13 +35,22 @@ fn parent_teething() {
 }
 
 #[test]
+fn scott_chaos_json() {
+    golden(&["chaos", "--instant", "--format", "json"], "scott-chaos.json");
+}
+
+#[test]
 fn real_time_runs_say_how_long_they_take() {
-    // 1 day at 0.001s per simulated hour: ~0.02s of wall time.
+    // 1 day, 3.6 million times faster than real life: ~0.02s of wall time.
     let out = Command::new(env!("CARGO_BIN_EXE_spin-life"))
-        .args(["--days", "1", "--scale", "0.001", "--quiet"])
+        .args(["--days", "1", "--speed-up", "3600000", "--quiet"])
         .output()
         .unwrap();
     let stdout = String::from_utf8(out.stdout).unwrap();
-    assert!(stdout.contains("⏱  about 0.0s of real time; add --instant"), "{stdout}");
-    assert!(stdout.contains("1 ordinary day (1 day,"), "{stdout}");
+    assert!(
+        stdout
+            .contains("⏱  about 0.0s of real time; add --instant to skip ahead, or --speed-up to go faster"),
+        "{stdout}"
+    );
+    assert!(stdout.contains("1 ordinary day (1 day, 3600000× real time)"), "{stdout}");
 }

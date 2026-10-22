@@ -15,8 +15,8 @@ on:
       scenario:
         description: which scenario (blank = the preset's default; `spin-life list -p NAME` lists them)
         default: ""
-      scale:
-        description: seconds per simulated hour (0 = instant)
+      speed_up:
+        description: times faster than real life (3600 = an hour per second, 0 = instant)
         default: "0"
 
 jobs:
@@ -33,12 +33,12 @@ jobs:
         env:
           PRESET: ${{ inputs.preset }}
           SCENARIO: ${{ inputs.scenario }}
-          SCALE: ${{ inputs.scale }}
+          SPEED_UP: ${{ inputs.speed_up }}
         run: |
           cargo build --release -q
           args=(run)
           [ -n "$SCENARIO" ] && args+=("$SCENARIO")
           args+=(--preset "$PRESET")
-          if [ "$SCALE" = "0" ]; then args+=(--instant); else args+=(--scale "$SCALE"); fi
+          if [ "$SPEED_UP" = "0" ]; then args+=(--instant); else args+=(--speed-up "$SPEED_UP"); fi
           ./target/release/spin-life "${args[@]}" | tee life.txt
           { echo '```text'; cat life.txt; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
