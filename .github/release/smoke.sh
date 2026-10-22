@@ -35,6 +35,12 @@ printf '[pursuit.a]\nsesion = "2h"\n' > "$work/bad.toml"
 if "$bin" check "$work/bad.toml"; then echo "::error::a typo was accepted"; exit 1; fi
 echo "::endgroup::"
 
-echo "::group::real time (hours as seconds, scaled down)"
-"$bin" run --days 1 --speed-up 360000 --quiet | tail -1
+echo "::group::real time: a day at 43200x takes ~2s and matches --instant"
+start=$(date +%s)
+"$bin" run --days 1 --speed-up 43200 --quiet | tail -n +5 > "$work/live.txt"
+took=$(( $(date +%s) - start ))
+"$bin" run --days 1 --instant --quiet | tail -n +4 > "$work/instant.txt"
+diff --strip-trailing-cr "$work/instant.txt" "$work/live.txt"
+(( took >= 1 && took <= 6 )) || { echo "::error::a day at 43200x took ${took}s, expected ~2s"; exit 1; }
+echo "took ${took}s; same day as --instant"
 echo "::endgroup::"
