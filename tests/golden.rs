@@ -5,7 +5,7 @@
 //!     cargo run -q -- chaos -i -q > tests/golden/scott-chaos.txt
 //!     cargo run -q -- incident -p agent -i -q > tests/golden/agent-incident.txt
 //!     cargo run -q -- teething -p parent -i -q > tests/golden/parent-teething.txt
-//!     cargo run -q -- chaos -i -f json > tests/golden/scott-chaos.json
+//!     cargo run -q -- chaos -i -f json | sed 's/"spin_life":"[^"]*"/"spin_life":"VERSION"/' > tests/golden/scott-chaos.json
 
 use std::process::Command;
 
@@ -13,7 +13,9 @@ use std::process::Command;
 fn golden(args: &[&str], file: &str) {
     let out = Command::new(env!("CARGO_BIN_EXE_spin-life")).args(args).output().unwrap();
     assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
-    let got = String::from_utf8(out.stdout).unwrap();
+    // The JSON names the version that wrote it; goldens say VERSION so a release bump doesn't break them.
+    let version = format!(r#""spin_life":"{}""#, env!("CARGO_PKG_VERSION"));
+    let got = String::from_utf8(out.stdout).unwrap().replace(&version, r#""spin_life":"VERSION""#);
     let want =
         std::fs::read_to_string(format!("{}/tests/golden/{file}", env!("CARGO_MANIFEST_DIR"))).unwrap();
     assert_eq!(got, want.replace("\r\n", "\n"), "output drifted from tests/golden/{file}");
