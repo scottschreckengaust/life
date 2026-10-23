@@ -1,0 +1,8 @@
+# The release machinery, the build and the reference lives need the maintainer's review.
+# With "Require review from Code Owners" on the main ruleset (maintainer bypass for PRs),
+# a fork can't change any of these without it.
+/.github/          @scottschreckengaust
+/Cargo.toml        @scottschreckengaust
+/Cargo.lock        @scottschreckengaust
+/release-plz.toml  @scottschreckengaust
+/presets/          @scottschreckengaust
