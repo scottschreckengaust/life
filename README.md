@@ -47,6 +47,20 @@ spin-life --life me.life.toml --days 7 --speed-up 36000
 Runs play out on the wall clock 3600 times faster than real life, an hour per second, wherever you run them.
 `--speed-up N` sets how much faster (`1` is real time), and `--instant` skips straight to the report.
 
+### Run windows
+
+`--from`, `--until` and `--for` cut a run to any slice, down to the millisecond. Everything before `--from` is
+lived instantly (so a window on day 6 doesn't wait five days), the window runs at your pace, and only the window
+is reported:
+
+```sh
+spin-life --days 1 --speed-up 1 --from 06:30 --for PT2S    # 2 real seconds of an actual morning
+spin-life chaos -i --from P2DT18H --until P2DT22H           # day 3, 18:00 to 22:00
+```
+
+`WHEN` is a time on day 1 (`06:30:00.5`) or an ISO 8601 duration from midnight of day 1 (`P2DT18H` is day 3 at
+18:00). A scenario can set its own window with `from`, and `until` or `for`; the flags override it.
+
 ### Machine-readable output
 
 `--format json` prints one JSON document and nothing else, for agents, dashboards and scripts:
@@ -61,15 +75,16 @@ spin-life chaos -i -f json | jq '.totals.hours'
 | `life`, `motto` | whose life (`motto` is `null` if there isn't one) |
 | `scenario` | `name`, `about`, `days`, `start` (the weekday of day 1, Monday = 0) |
 | `speed_up` | how many times faster than real life it ran, or `null` for `--instant` |
+| `window` | `from` and `until` in seconds, or `null` for the whole run |
 | `signal` | what a good night's sleep produces (`idea` for the reference life) |
 | `activities` | `name`, `glyph` and `pursuit` (built-in or from the life file) for every activity, in report order |
 | `days` | per day: `hours` for every activity (the night after counts toward the day), `dreams`, `signal`, `coffee`, `wakeups` |
 | `totals` | the same, summed; `signals` counts the days that produced one |
-| `spans` | every stretch of time: `day`, `what`, `start`, `end` |
-| `diary` | every diary line: `at`, `when` (`d1 06:30`), `note` |
+| `spans` | every stretch of time: `day`, `what`, `start`, `end` (seconds) |
+| `diary` | every diary line: `at` (seconds), `when` (`d1 06:30`, or `d1 06:30:02.5`), `note` |
 
-Times are hours since midnight at the start of day 1, rounded to 3 decimal places. The output is compact, and
-the key order is fixed, so the same run always gives the same bytes.
+`start`, `end`, `at` and `window` are seconds since midnight at the start of day 1, to the millisecond; `hours`
+are hours. The output is compact, and the key order is fixed, so the same run always gives the same bytes.
 
 ## Write your rules
 
@@ -82,13 +97,13 @@ all = ["geek", "people", "surf"]   # or: workday = [...] and weekend = [...]
 
 [pursuit.geek]                     # _ = geek()
 on      = "idea"                   # started by a signal...
-session = "2h"                     # ...and runs one session
+session = "PT2H"                   # ...and runs one session
 
 [pursuit.people]                   # _ = people()
-when = ["workdays 18:00-20:00", "weekends 12:00-15:00"]   # a window: runs to its end
+when = ["workdays 18:00/20:00", "weekends 12:00/15:00"]   # a window: runs to its end
 
 [pursuit.surf]                     # _ = surf()
-lasts    = "3h"                    # a swell stays rideable for 3 hours
+lasts    = "PT3H"                  # a swell stays rideable for 3 hours
 preempts = ["geek"]                # an urgent swell drops the geek future mid-.await
 
 [sleep]                            # while !ALARM.load(Acquire) { dream(); spin_loop(); }
@@ -98,13 +113,13 @@ woken_by     = ["people", "surf"]  # urgent parties and big swells ring the alar
 
 [caffeine]                         # spin_loop() without dream()
 cutoff = "12:00"
-wired  = "6h"
+wired  = "PT6H"
 ```
 
 | rule | what it means |
 |---|---|
 | `priorities` | The `select!` order. Per kind of day: `workday`, `weekend`, or `all`. |
-| `when` | Recurring windows: `"18:00-20:00"`, `"workdays 18:00-20:00"`, `"sat,sun 07:00-08:30"`, `"mon-fri ..."`. |
+| `when` | Recurring windows: `"18:00/20:00"`, `"workdays 18:00/20:00"`, `"sat,sun 07:00/08:30"`, `"mon-fri ..."`. |
 | `on` | A signal that starts the pursuit. Sleep produces one (`sleep.signal`); scenarios can send them. |
 | `session`, `lasts` | How long one session runs; how long an opportunity stays open. |
 | `preempts` | Pursuits this one interrupts, with an urgent event or when one of its windows opens. |
@@ -112,7 +127,18 @@ wired  = "6h"
 | `sleep.woken_by` | Whose urgent events may wake you. A deep sleeper sets `[]`. |
 | `[work]`, `[meals]`, `[caffeine]` | The fixed parts of a day. Optional: a life without `[work]` has no job. |
 
-Unknown keys are errors, not silence: `sesion = "2h"` fails with `unknown key pursuit.a.sesion`.
+Unknown keys are errors, not silence: `sesion = "PT2H"` fails with `unknown key pursuit.a.sesion`.
+
+Times, durations and windows are [ISO 8601](https://en.wikipedia.org/wiki/ISO_8601), to the millisecond, and
+nothing else:
+
+| kind | examples |
+|---|---|
+| time of day | `"06:30"`, `"06:30:15"`, `"06:30:02.5"`, `"24:00"` |
+| duration | `"PT30M"`, `"PT1H30M"`, `"PT2.5S"`, `"P1DT6H"` |
+| window | `"18:00/20:00"`, `"22:30/06:30"` (past midnight), `"09:00/PT8H"` |
+
+An older file with `"1h30m"` or `"18:00-20:00"` fails `spin-life check` with the ISO version to use instead.
 
 ### Scenarios: what happens this week
 
@@ -128,6 +154,9 @@ events = [
 
 Events: `pursuit` (with optional `until`, `urgent`, `note`), `signal`, `coffee = <shots>`, `work_until`, `flight`
 (and `lands`), `up_late` with `doing`, and `skip` (no windows for that pursuit today).
+
+`from`, and `until` or `for`, give a scenario its own [run window](#run-windows): `from = "06:30"`,
+`for = "PT1S"` is one second of a morning.
 
 ### Presets
 
@@ -222,6 +251,7 @@ src/macros.rs    select! and join!
 src/alarm.rs     ALARM: AtomicBool + why it rang, with the orderings explained
 src/journal.rs   what happened: spans, diary, totals, timeline, JSON
 src/json.rs      just enough JSON writing for --format json
+src/iso.rs       ISO 8601 times, durations and windows: the only formats a life file takes
 src/main.rs      the CLI
 CHANGELOG.md     every release, written by release-plz from PR titles
 presets/         scott (the motto), parent, agent

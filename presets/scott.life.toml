@@ -16,33 +16,33 @@ all = ["geek", "people", "surf"]
 [pursuit.geek]
 note    = "🧠 geeking out"
 on      = "idea"
-session = "2h"
+session = "PT2H"
 
 # _ = people(): family dinner on workdays, a long lunch on weekends.
 [pursuit.people]
 note = "👨‍👩‍👧 family time"
 glyph = "P"
-when = ["workdays 18:00-20:00", "weekends 12:00-15:00"]
+when = ["workdays 18:00/20:00", "weekends 12:00/15:00"]
 
 # _ = surf(): when there's a swell. A swell stays rideable for 3 hours.
 # A BIG (urgent) swell drops the geek future mid-.await. It never interrupts family.
 [pursuit.surf]
 note     = "🏄 catching waves"
-session  = "2h"
-lasts    = "3h"
+session  = "PT2H"
+lasts    = "PT3H"
 preempts = ["geek"]
 
 [work]
 days  = "mon-fri"
-hours = "09:00-17:00"
-lunch = "12:00-13:00"
+hours = "09:00/17:00"
+lunch = "12:00/13:00"
 
 # join!(live(), eat())
 [meals]
-breakfast      = "30m"
+breakfast      = "PT30M"
 dinner         = "20:00"
 weekend_dinner = "19:00"
-dinner_lasts   = "1h"
+dinner_lasts   = "PT1H"
 
 # while !ALARM.load(Acquire) { dream(); spin_loop(); }
 [sleep]
@@ -50,7 +50,7 @@ wake          = "06:30"
 bed           = "22:30"
 weekend_wake  = "08:00"
 weekend_bed   = "23:00"
-rem_cycle     = "1h30m"
+rem_cycle     = "PT1H30M"
 signal_after  = 5                        # 5 REM cycles in one night: wake with an idea
 signal        = "idea"
 signal_note   = "💡 woke up with an idea"
@@ -59,8 +59,8 @@ woken_by      = ["people", "surf"]       # urgent parties and big swells ring th
 # Afternoon coffee: spin_loop() without dream().
 [caffeine]
 cutoff         = "12:00"
-wired          = "6h"
-per_extra_shot = "1h30m"
+wired          = "PT6H"
+per_extra_shot = "PT1H30M"
 
 # ------------------------------------------------------------------------- scenarios
 

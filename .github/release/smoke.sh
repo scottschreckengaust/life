@@ -31,8 +31,10 @@ echo "matches tests/golden"
 echo "::endgroup::"
 
 echo "::group::bad input is rejected"
-printf '[pursuit.a]\nsesion = "2h"\n' > "$work/bad.toml"
+printf '[pursuit.a]\nsesion = "PT2H"\n' > "$work/bad.toml"
 if "$bin" check "$work/bad.toml"; then echo "::error::a typo was accepted"; exit 1; fi
+printf '[pursuit.a]\nsession = "2h"\n' > "$work/old.toml"
+if "$bin" check "$work/old.toml"; then echo "::error::a non-ISO duration was accepted"; exit 1; fi
 echo "::endgroup::"
 
 echo "::group::real time: a day at 43200x takes ~2s and matches --instant"
@@ -43,4 +45,14 @@ took=$(( $(date +%s) - start ))
 diff --strip-trailing-cr "$work/instant.txt" "$work/live.txt"
 (( took >= 1 && took <= 6 )) || { echo "::error::a day at 43200x took ${took}s, expected ~2s"; exit 1; }
 echo "took ${took}s; same day as --instant"
+echo "::endgroup::"
+
+echo "::group::actual real time: a 2 s window at --speed-up 1 matches --instant"
+start=$(date +%s)
+"$bin" run --days 1 --speed-up 1 --from 06:30 --for PT2S --quiet | tail -n +5 > "$work/live1x.txt"
+took=$(( $(date +%s) - start ))
+"$bin" run --days 1 --instant --from 06:30 --for PT2S --quiet | tail -n +4 > "$work/instant1x.txt"
+diff --strip-trailing-cr "$work/instant1x.txt" "$work/live1x.txt"
+(( took >= 1 && took <= 6 )) || { echo "::error::a 2 s window at 1x took ${took}s"; exit 1; }
+echo "took ${took}s; same window as --instant"
 echo "::endgroup::"

@@ -3,10 +3,10 @@
 //! * [`Mode::Virtual`]: when every task is waiting, time jumps straight to the next
 //!   timer. A week of life runs in microseconds, and it runs the same way every time.
 //! * [`Mode::RealTime`]: one simulated hour takes a fixed amount of wall-clock time
-//!   (1 second by default in the CLI: hours become seconds).
+//!   (1 second by default in the CLI, which runs 3600 times faster than real life).
 //!
 //! Time is measured in simulated hours (`f64`) at the API and in whole simulated
-//! seconds internally, so timers never disagree about rounding.
+//! milliseconds internally, so timers never disagree about rounding.
 
 use std::{
     cell::{Cell, RefCell},
@@ -20,7 +20,7 @@ use std::{
     time::{Duration, Instant},
 };
 
-const SECS_PER_HOUR: f64 = 3600.0;
+const MS_PER_HOUR: f64 = 3_600_000.0;
 const MAIN: usize = usize::MAX;
 
 /// How the clock moves.
@@ -60,8 +60,12 @@ impl Wake for TaskWaker {
 
 struct Exec {
     mode: Mode,
-    origin: u64,
-    started: Instant,
+    /// Real-time runs follow the wall clock from `origin`, which it reached at `started`.
+    origin: Cell<u64>,
+    started: Cell<Instant>,
+    /// Before this, a real-time run travels in time like a virtual one.
+    live_from: u64,
+    live: Cell<bool>,
     virt: Cell<u64>,
     timers: RefCell<Vec<(u64, Waker)>>,
     tasks: RefCell<Vec<Option<Task>>>,
@@ -69,14 +73,16 @@ struct Exec {
 }
 
 impl Exec {
+    /// Simulated time. It only moves when the executor is idle, and then lands exactly on a
+    /// timer's deadline, in both modes, so a real-time run lives the same day as a virtual one.
     fn now(&self) -> u64 {
-        match self.mode {
-            Mode::Virtual => self.virt.get(),
-            Mode::RealTime(per_hour) => {
-                let hours = self.started.elapsed().as_secs_f64() / per_hour.as_secs_f64();
-                self.origin + (hours * SECS_PER_HOUR) as u64
-            }
-        }
+        self.virt.get()
+    }
+
+    /// Where the wall clock says simulated time should be, for real-time runs.
+    fn wall(&self, per_hour: Duration) -> u64 {
+        let hours = self.started.get().elapsed().as_secs_f64() / per_hour.as_secs_f64();
+        self.origin.get() + (hours * MS_PER_HOUR) as u64
     }
 
     fn waker(&self, id: usize) -> Waker {
@@ -90,22 +96,51 @@ impl Exec {
     /// Nothing is runnable: fire the next timer, travelling in time if allowed.
     fn idle(&self) {
         let next = self.timers.borrow().iter().map(|t| t.0).min();
+        if matches!(self.mode, Mode::RealTime(_)) && !self.live.get() {
+            match next {
+                // Still before the live part: skip ahead like Mode::Virtual.
+                Some(n) if n < self.live_from => {
+                    self.virt.set(self.virt.get().max(n));
+                    return self.fire_due();
+                }
+                // Reached it: from here the wall clock runs.
+                _ => {
+                    self.virt.set(self.virt.get().max(self.live_from));
+                    self.origin.set(self.virt.get());
+                    self.started.set(Instant::now());
+                    self.live.set(true);
+                }
+            }
+        }
         let Some(next) = next else {
             match self.mode {
                 Mode::Virtual => panic!("deadlock: every task is asleep and nobody set an alarm"),
-                Mode::RealTime(_) => return thread::park(),
+                Mode::RealTime(per_hour) => {
+                    thread::park();
+                    self.virt.set(self.virt.get().max(self.wall(per_hour)));
+                    return;
+                }
             }
         };
         match self.mode {
             Mode::Virtual => self.virt.set(self.virt.get().max(next)),
             Mode::RealTime(per_hour) => {
-                let now = self.now();
-                if next > now {
-                    let hours = (next - now) as f64 / SECS_PER_HOUR;
+                let wall = self.wall(per_hour);
+                if next > wall {
+                    let hours = (next - wall) as f64 / MS_PER_HOUR;
                     thread::park_timeout(per_hour.mul_f64(hours));
                 }
+                // Fire on the deadline, not a few microseconds of wall clock after it. A
+                // wake-up from another thread before the deadline just catches up to the wall.
+                let wall = self.wall(per_hour);
+                self.virt.set(self.virt.get().max(if wall >= next { next } else { wall }));
             }
         }
+        self.fire_due();
+    }
+
+    /// Wake every timer whose deadline has come.
+    fn fire_due(&self) {
         let now = self.now();
         let due: Vec<(u64, Waker)> = {
             let mut timers = self.timers.borrow_mut();
@@ -133,17 +168,27 @@ impl Drop for Enter {
     }
 }
 
-fn secs(hours: f64) -> u64 {
-    (hours * SECS_PER_HOUR).round().max(0.0) as u64
+fn ms(hours: f64) -> u64 {
+    (hours * MS_PER_HOUR).round().max(0.0) as u64
 }
 
 /// Run `fut` to completion, starting the clock at `start` simulated hours.
 pub fn block_on<F: Future>(mode: Mode, start: f64, fut: F) -> F::Output {
+    block_on_live_from(mode, start, start, fut)
+}
+
+/// Like [`block_on`], but a [`Mode::RealTime`] clock travels in time like [`Mode::Virtual`]
+/// until `live_from`, and only follows the wall clock from there: a window late in a long run
+/// doesn't wait through everything before it. In [`Mode::Virtual`], `live_from` changes nothing.
+pub fn block_on_live_from<F: Future>(mode: Mode, start: f64, live_from: f64, fut: F) -> F::Output {
+    let live_from = ms(live_from).max(ms(start));
     let exec = Rc::new(Exec {
         mode,
-        origin: secs(start),
-        started: Instant::now(),
-        virt: Cell::new(secs(start)),
+        origin: Cell::new(ms(start)),
+        started: Cell::new(Instant::now()),
+        live_from,
+        live: Cell::new(live_from <= ms(start)),
+        virt: Cell::new(ms(start)),
         timers: RefCell::default(),
         tasks: RefCell::default(),
         ready: Arc::new(Ready { queue: Mutex::new(VecDeque::from([MAIN])), thread: thread::current() }),
@@ -174,7 +219,7 @@ pub fn block_on<F: Future>(mode: Mode, start: f64, fut: F) -> F::Output {
 
 /// The current simulated time, in hours.
 pub fn now() -> f64 {
-    with(|e| e.now()) as f64 / SECS_PER_HOUR
+    with(|e| e.now()) as f64 / MS_PER_HOUR
 }
 
 /// A timer future. Cancel it by dropping it.
@@ -206,12 +251,12 @@ impl Future for Sleep {
 
 /// Sleep until simulated hour `at`.
 pub fn sleep_until(at: f64) -> Sleep {
-    Sleep { at: secs(at), armed: false }
+    Sleep { at: ms(at), armed: false }
 }
 
 /// Sleep for `hours` simulated hours.
 pub fn sleep(hours: f64) -> Sleep {
-    Sleep { at: with(|e| e.now()) + secs(hours), armed: false }
+    Sleep { at: with(|e| e.now()) + ms(hours), armed: false }
 }
 
 /// A handle to a spawned task.

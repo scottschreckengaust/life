@@ -11,29 +11,29 @@ weekend = ["running", "kids", "guitar"]
 
 [pursuit.kids]
 note      = "🧒 kids"
-when      = ["workdays 17:30-20:00", "weekends 09:00-12:00", "weekends 15:00-18:00"]
+when      = ["workdays 17:30/20:00", "weekends 09:00/12:00", "weekends 15:00/18:00"]
 protected = true                         # nothing interrupts kids...
 preempts  = ["guitar"]                   # ...and kids' time interrupts guitar
 
 [pursuit.guitar]
 note    = "🎸 guitar"
 on      = "inspiration"
-session = "1h30m"
+session = "PT1H30M"
 
 [pursuit.running]
 note  = "🏃 running"
 glyph = "R"
-when  = "sat,sun 07:00-08:30"
+when  = "sat,sun 07:00/08:30"
 
 [work]
 days  = "mon-fri"
-hours = "08:30-17:00"
-lunch = "12:30-13:00"
+hours = "08:30/17:00"
+lunch = "12:30/13:00"
 
 [meals]
-breakfast    = "30m"
+breakfast    = "PT30M"
 dinner       = "20:00"
-dinner_lasts = "45m"
+dinner_lasts = "PT45M"
 
 [sleep]
 wake         = "06:00"
@@ -46,7 +46,7 @@ woken_by     = ["kids"]
 
 [caffeine]
 cutoff = "14:00"
-wired  = "5h"
+wired  = "PT5H"
 
 [scenario.teething]
 about  = "a teething week: the baby wakes you at 02:00 three nights running"

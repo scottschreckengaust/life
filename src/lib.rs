@@ -24,6 +24,7 @@
 #![warn(missing_debug_implementations)]
 
 mod alarm;
+pub mod iso;
 mod journal;
 pub mod json;
 mod macros;
@@ -47,11 +48,35 @@ pub const EARTH_SPIN: f64 = 24.0;
 /// The granularity of one `dream()`: the alarm can still cut it short.
 const TICK: f64 = 0.25;
 
-/// `"d3 07:30"` for an absolute simulated hour.
+/// `"d3 07:30"` for an absolute simulated hour, with seconds only when there are some:
+/// `"d1 06:30:15"`, `"d1 06:30:02.5"` (to the millisecond).
 pub fn hhmm(abs: f64) -> String {
-    let minutes = (abs * 60.0).round().max(0.0) as u64;
-    let (day, m) = (minutes / 1440 + 1, minutes % 1440);
-    format!("d{day} {:02}:{:02}", m / 60, m % 60)
+    let ms = (abs * 3_600_000.0).round().max(0.0) as u64;
+    let (day, ms) = (ms / 86_400_000 + 1, ms % 86_400_000);
+    let (h, m, sec, frac) = (ms / 3_600_000, ms / 60_000 % 60, ms / 1000 % 60, ms % 1000);
+    let mut out = format!("d{day} {h:02}:{m:02}");
+    if sec > 0 || frac > 0 {
+        out += &format!(":{sec:02}");
+    }
+    if frac > 0 {
+        out += format!(".{frac:03}").trim_end_matches('0');
+    }
+    out
+}
+
+#[cfg(test)]
+mod tests {
+    use super::hhmm;
+
+    #[test]
+    fn hhmm_shows_seconds_only_when_there_are_some() {
+        assert_eq!(hhmm(6.5), "d1 06:30");
+        assert_eq!(hhmm(6.5 + 15.0 / 3600.0), "d1 06:30:15");
+        assert_eq!(hhmm(6.5 + 2.5 / 3600.0), "d1 06:30:02.5");
+        assert_eq!(hhmm(6.5 + 0.125 / 3600.0), "d1 06:30:00.125");
+        assert_eq!(hhmm(24.0), "d2 00:00");
+        assert_eq!(hhmm(30.5), "d2 06:30");
+    }
 }
 
 /// A chance to do a pursuit, in absolute hours.
@@ -97,6 +122,9 @@ pub struct Life<'r> {
     opps: RefCell<Vec<Opportunity>>,
     coffee: RefCell<Vec<(usize, f64, u32, bool)>>,
     dreamt: Cell<f64>,
+    /// Only `[from, until)` is reported (absolute hours); see [`Life::window`].
+    from: Option<f64>,
+    until: Option<f64>,
 }
 
 /// Records how long an activity ran when it ends, *or when it is cancelled*.
@@ -228,6 +256,8 @@ impl<'r> Life<'r> {
             opps: RefCell::new(opps),
             coffee: RefCell::new(coffee),
             dreamt: Cell::new(0.0),
+            from: scenario.from,
+            until: scenario.until,
         }
     }
 
@@ -237,13 +267,62 @@ impl<'r> Life<'r> {
         self
     }
 
-    /// Live every day of the scenario. The clock starts at the first morning's alarm.
-    pub fn run(self, mode: rt::Mode) -> Journal {
-        let start = self.plans[0].wake;
-        rt::block_on(mode, start, self.live())
+    /// When the run starts: the first morning's alarm, in absolute hours.
+    pub fn starts_at(&self) -> f64 {
+        self.plans[0].wake
     }
 
-    async fn live(self) -> Journal {
+    /// When the run ends: the alarm the morning after the last day, in absolute hours.
+    pub fn ends_at(&self) -> f64 {
+        abs(self.days + 1, self.plans[self.days].wake)
+    }
+
+    /// Report only `[from, until)`, in absolute hours since midnight of day 1 (`None`: the
+    /// start or end of the run). Before `from` the run skips ahead in virtual time, even in
+    /// [`rt::Mode::RealTime`]; it stops at `until`. Overrides the scenario's own window.
+    ///
+    /// # Panics
+    /// If the window is empty or reaches outside the run.
+    pub fn window(mut self, from: Option<f64>, until: Option<f64>) -> Self {
+        let (start, end) = (self.starts_at(), self.ends_at());
+        let (f, u) = (from.unwrap_or(start), until.unwrap_or(end));
+        assert!(f >= start - 1e-9, "the window starts before the run does ({})", hhmm(start));
+        assert!(u <= end + 1e-9, "the window ends after the run does ({})", hhmm(end));
+        assert!(u > f, "the window must end after it starts");
+        self.from = from;
+        self.until = until;
+        self
+    }
+
+    /// Live every day of the scenario, or the window of it. The clock starts at the first
+    /// morning's alarm.
+    pub fn run(self, mode: rt::Mode) -> Journal {
+        let start = self.starts_at();
+        let from = self.from.unwrap_or(start);
+        let until = self.until;
+        rt::block_on_live_from(mode, start, from, async {
+            match until {
+                None => self.live().await,
+                Some(until) => {
+                    let stop = async move { rt::sleep_until(until).await };
+                    let _ = rt::select_biased(vec![Box::pin(self.live()), Box::pin(stop)]).await;
+                }
+            }
+        });
+        let windowed = self.from.is_some() || self.until.is_some();
+        let mut journal = self.journal.into_inner();
+        if windowed {
+            journal.clip(from, until.unwrap_or(f64::INFINITY));
+        }
+        journal
+    }
+
+    /// Is `at` inside the window?
+    fn in_window(&self, at: f64) -> bool {
+        self.from.map_or(true, |f| at >= f) && self.until.map_or(true, |u| at < u)
+    }
+
+    async fn live(&self) {
         // Sunrise: one ring per spin of the earth, at each next morning's wake time.
         let wakes: Vec<f64> = (1..=self.days).map(|d| abs(d + 1, self.plans[d].wake)).collect();
         let alarm = self.alarm.clone();
@@ -262,7 +341,6 @@ impl<'r> Life<'r> {
         }
         sunrise.abort();
         self.log("⏰ alarm. To be continued.");
-        self.journal.into_inner()
     }
 
     // ---------------------------------------------------------------- the day
@@ -567,12 +645,15 @@ impl<'r> Life<'r> {
     }
 
     fn tally(&self, f: impl FnOnce(&mut Tally)) {
+        if !self.in_window(self.now()) {
+            return;
+        }
         f(&mut self.journal.borrow_mut().tallies[self.today.get() - 1]);
     }
 
     fn log(&self, note: impl Into<String>) {
         let (at, note) = (self.now(), note.into());
-        if self.echo {
+        if self.echo && self.in_window(at) {
             println!("{}  {note}", hhmm(at));
         }
         self.journal.borrow_mut().moments.push(Moment { at, note });

@@ -1,6 +1,6 @@
 //! `--speed-up` really runs on the wall clock: a day at N× takes 86400/N real seconds,
-//! and comes out exactly like the `--instant` run. Kept to a few seconds; the two
-//! tests run in parallel.
+//! and comes out exactly like the `--instant` run. A run window makes actual real time
+//! (`--speed-up 1`) testable too. Kept to a few seconds; the tests run in parallel.
 
 use std::process::Command;
 use std::time::{Duration, Instant};
@@ -35,4 +35,40 @@ fn a_day_at_86400x_takes_a_second() {
 #[test]
 fn a_day_at_43200x_takes_two_seconds() {
     one_day_at(43_200, 2.0);
+}
+
+/// A window at actual real time: `secs` of simulated time take `secs` of wall time.
+#[track_caller]
+fn real_time_window(window: &[&str], secs: f64, slack: f64) -> String {
+    let live_args = [&["--days", "1", "--speed-up", "1", "--quiet"][..], window].concat();
+    let instant_args = [&["--days", "1", "--instant", "--quiet"][..], window].concat();
+    let (live, took) = report(&live_args);
+    let (instant, _) = report(&instant_args);
+    let took = took.as_secs_f64();
+    assert!(took >= secs * 0.9, "{window:?}: finished in {took:.2}s, expected ~{secs}s");
+    assert!(took <= secs + slack, "{window:?}: took {took:.2}s, expected ~{secs}s");
+    assert_eq!(live, instant, "{window:?} at 1× lived a different window than --instant");
+    live
+}
+
+#[test]
+fn two_seconds_at_actual_real_time() {
+    let report = real_time_window(&["--from", "06:30", "--for", "PT2S"], 2.0, 2.0);
+    assert!(report.contains("Last entry d1 06:30."), "{report}");
+}
+
+#[test]
+fn half_a_second_at_actual_real_time() {
+    real_time_window(&["--from", "06:30", "--for", "PT0.5S"], 0.5, 2.0);
+}
+
+#[test]
+fn a_late_window_skips_ahead_to_it() {
+    // Day 6 at 10:00, five days in: virtual until the window, then 1 s of real time.
+    let started = Instant::now();
+    let (live, _) = report(&["chaos", "--speed-up", "1", "--from", "P5DT10H", "--for", "PT1S", "--quiet"]);
+    let took = started.elapsed().as_secs_f64();
+    assert!((0.9..=3.0).contains(&took), "took {took:.2}s");
+    let (instant, _) = report(&["chaos", "--instant", "--from", "P5DT10H", "--for", "PT1S", "--quiet"]);
+    assert_eq!(live, instant);
 }
