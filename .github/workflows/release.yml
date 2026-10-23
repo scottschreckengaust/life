@@ -172,7 +172,7 @@ jobs:
           workflow checked that before publishing this page.
           NOTES
           cat notes.md
-      - uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64 # v3.0.3
+      - uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64 # v3.0.3 # zizmor: ignore[superfluous-actions] kept as the off-the-shelf release step; the commit is pinned
         with:
           tag_name: ${{ needs.plan.outputs.tag }}
           name: ${{ needs.plan.outputs.name }} ${{ needs.plan.outputs.tag }}
@@ -451,7 +451,7 @@ jobs:
     steps:
       - name: publish the release
         if: needs.plan.outputs.rehearsal != 'true'
-        uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64 # v3.0.3
+        uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64 # v3.0.3 # zizmor: ignore[superfluous-actions] kept as the off-the-shelf release step; the commit is pinned
         with:
           tag_name: ${{ needs.plan.outputs.tag }}
           draft: false
