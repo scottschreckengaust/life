@@ -1,6 +1,55 @@
 use spin_life::{hhmm, iso, json, rt::Mode, Life, Rules, Scenario, PRESETS};
 use std::{process::exit, time::Duration};
 
+/// `print!` that ends the program quietly when stdout has gone away (`spin-life | head`),
+/// instead of panicking on the broken pipe.
+macro_rules! out {
+    ($($t:tt)*) => {{
+        use std::io::Write as _;
+        if let Err(e) = write!(std::io::stdout(), $($t)*) {
+            closed(e)
+        }
+    }};
+}
+
+/// `println!`, the same way.
+macro_rules! outln {
+    () => { out!("\n") };
+    ($($t:tt)*) => {{
+        use std::io::Write as _;
+        if let Err(e) = writeln!(std::io::stdout(), $($t)*) {
+            closed(e)
+        }
+    }};
+}
+
+/// Stdout failed: a closed pipe is a normal way to stop; anything else is a real error.
+fn closed(e: std::io::Error) -> ! {
+    if e.kind() == std::io::ErrorKind::BrokenPipe {
+        exit(0)
+    }
+    eprintln!("spin-life: can't write output: {e}");
+    exit(1)
+}
+
+/// Rust ignores SIGPIPE, which turns a closed pipe into write errors. Restore the default,
+/// so `spin-life | head` ends the moment `head` is done, even mid real-time run.
+#[cfg(unix)]
+fn die_quietly_on_sigpipe() {
+    extern "C" {
+        fn signal(signum: i32, handler: usize) -> usize;
+    }
+    const SIGPIPE: i32 = 13; // the same on Linux and macOS
+    const SIG_DFL: usize = 0;
+    // SAFETY: setting a signal's disposition back to its default, before any other threads exist.
+    unsafe {
+        signal(SIGPIPE, SIG_DFL);
+    }
+}
+
+#[cfg(not(unix))]
+fn die_quietly_on_sigpipe() {}
+
 const USAGE: &str = "\
 spin-life: simulate a life from rules you write
 
@@ -53,6 +102,7 @@ enum Format {
 }
 
 fn main() {
+    die_quietly_on_sigpipe();
     let a = parse_args();
     if a.instant && a.speed_up.is_some() {
         fail("--instant and --speed-up don't mix: pick one")
@@ -71,13 +121,13 @@ fn main() {
     match a.cmd.as_deref().unwrap_or("run") {
         "presets" => {
             for (name, about, _) in PRESETS {
-                println!("  {name:<8} {about}");
+                outln!("  {name:<8} {about}");
             }
         }
         "init" => {
             let name = a.preset.as_deref().or(a.target.as_deref()).unwrap_or("scott");
             match Rules::preset_source(name) {
-                Some(src) => print!("{src}"),
+                Some(src) => out!("{src}"),
                 None => fail(&format!("no preset named `{name}`; try `spin-life presets`")),
             }
         }
@@ -85,7 +135,7 @@ fn main() {
             let Some(path) = a.target.as_deref().or(a.life.as_deref()) else { fail("check needs a FILE") };
             let rules = load_file(path);
             let names: Vec<&str> = rules.pursuits.iter().map(|p| p.name.as_str()).collect();
-            println!(
+            outln!(
                 "✅ {path}: {} pursuits ({}), {} scenarios",
                 names.len(),
                 names.join(", "),
@@ -95,10 +145,10 @@ fn main() {
         "list" => {
             let rules = load(&a);
             if rules.scenarios.is_empty() {
-                println!("  (no scenarios; `spin-life run --days 7` lives an ordinary week)");
+                outln!("  (no scenarios; `spin-life run --days 7` lives an ordinary week)");
             }
             for s in &rules.scenarios {
-                println!("  {:<16} {}", s.name, s.about);
+                outln!("  {:<16} {}", s.name, s.about);
             }
         }
         "run" => run(&a),
@@ -186,7 +236,7 @@ fn run(a: &Args) {
         }
         journal.to_json(&mut out);
         out.push('}');
-        println!("{out}");
+        outln!("{out}");
         return;
     }
     let pace = speed_up.map_or_else(
@@ -203,18 +253,21 @@ fn run(a: &Args) {
     };
     let plural = if scenario.days == 1 { "" } else { "s" };
     if let Some(motto) = &rules.motto {
-        println!("“{motto}”");
+        outln!("“{motto}”");
     }
-    println!(
+    outln!(
         "🌍 {} / {}: {} ({} day{plural}, {pace})",
-        rules.name, scenario.name, scenario.about, scenario.days
+        rules.name,
+        scenario.name,
+        scenario.about,
+        scenario.days
     );
     if let Some(hint) = hint {
-        println!("{hint}");
+        outln!("{hint}");
     }
-    println!();
+    outln!();
     let journal = life.echo(!a.quiet).run(mode);
-    print!("{}", journal.report());
+    out!("{}", journal.report());
 }
 
 fn load(a: &Args) -> Rules {
@@ -245,11 +298,11 @@ fn parse_args() -> Args {
     while let Some(arg) = it.next() {
         match arg.as_str() {
             "-h" | "--help" => {
-                println!("{USAGE}");
+                outln!("{USAGE}");
                 exit(0)
             }
             "-V" | "--version" => {
-                println!("spin-life {}", env!("CARGO_PKG_VERSION"));
+                outln!("spin-life {}", env!("CARGO_PKG_VERSION"));
                 exit(0)
             }
             "-i" | "--instant" => a.instant = true,
