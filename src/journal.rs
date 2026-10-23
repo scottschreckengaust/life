@@ -321,8 +321,9 @@ impl Journal {
         let signals = self.day_range().filter(|&d| self.tallies[d - 1].signal).count();
         let _ = writeln!(
             out,
-            "\n{} spins of the earth: {}, {:.0}h asleep, {signals} {}(s). Last entry {}.",
+            "\n{} spin{} of the earth: {}, {:.0}h asleep, {signals} {}(s). Last entry {}.",
             self.days(),
+            if self.days() == 1 { "" } else { "s" },
             spent.join(", "),
             total("sleep"),
             self.signal,

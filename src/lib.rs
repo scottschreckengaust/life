@@ -115,7 +115,8 @@ pub struct Life<'r> {
     rules: &'r Rules,
     days: usize,
     plans: Vec<Plan>,
-    echo: bool,
+    /// Print the diary as it happens; switched off if stdout goes away.
+    echo: Cell<bool>,
     alarm: Arc<Alarm>,
     journal: RefCell<Journal>,
     today: Cell<usize>,
@@ -249,7 +250,7 @@ impl<'r> Life<'r> {
             rules,
             days: n,
             plans,
-            echo: false,
+            echo: Cell::new(false),
             alarm: Arc::default(),
             journal: RefCell::new(Journal::new(n, pursuits, rules.sleep.signal.clone())),
             today: Cell::new(1),
@@ -262,8 +263,8 @@ impl<'r> Life<'r> {
     }
 
     /// Print the diary as it happens.
-    pub fn echo(mut self, on: bool) -> Self {
-        self.echo = on;
+    pub fn echo(self, on: bool) -> Self {
+        self.echo.set(on);
         self
     }
 
@@ -653,8 +654,12 @@ impl<'r> Life<'r> {
 
     fn log(&self, note: impl Into<String>) {
         let (at, note) = (self.now(), note.into());
-        if self.echo && self.in_window(at) {
-            println!("{}  {note}", hhmm(at));
+        if self.echo.get() && self.in_window(at) {
+            use std::io::Write as _;
+            // A closed stdout (`spin-life | head`) stops the echo; it is not worth a panic.
+            if writeln!(std::io::stdout(), "{}  {note}", hhmm(at)).is_err() {
+                self.echo.set(false);
+            }
         }
         self.journal.borrow_mut().moments.push(Moment { at, note });
     }
