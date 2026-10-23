@@ -19,6 +19,9 @@ permissions: {}
 
 jobs:
   remind:
+    # One run per PR at a time, so a quick opened + synchronize can't post twice.
+    concurrency:
+      group: rehearse-reminder-${{ github.event.pull_request.number }}
     # Release PRs only bump the version, and the release itself is their rehearsal.
     if: github.repository_owner == 'scottschreckengaust' && !startsWith(github.head_ref, 'release-plz-')
     runs-on: ubuntu-latest
@@ -30,14 +33,16 @@ jobs:
       PR: ${{ github.event.pull_request.number }}
     steps:
       - name: comment once
+        shell: bash # -o pipefail: a failed API call fails the step instead of looking like "nothing to do"
         run: |
           marker='<!-- rehearse-reminder -->'
           if gh api "repos/$REPO/issues/$PR/comments" --paginate --jq '.[].body' | grep -qF "$marker"; then
             echo "already reminded"
             exit 0
           fi
-          files=$(gh api "repos/$REPO/pulls/$PR/files" --paginate --jq '.[].filename' |
-            grep -E '^(\.github/workflows/release(-cut|-plz)?\.yml|\.github/release/.*|release-plz\.toml|Cargo\.toml)$' |
+          all=$(gh api "repos/$REPO/pulls/$PR/files" --paginate --jq '.[].filename')
+          # File names come from the PR (maybe a fork): only plain path characters get into the comment.
+          files=$(grep -E '^(\.github/workflows/release(-cut|-plz)?\.yml|\.github/release/[A-Za-z0-9._/-]+|release-plz\.toml|Cargo\.toml)$' <<<"$all" |
             sed 's/^/- /' || true)
           [[ -n "$files" ]] || { echo "no release files changed"; exit 0; }
           body="$marker
