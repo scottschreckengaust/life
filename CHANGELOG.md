@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.0](https://github.com/scottschreckengaust/life/compare/v0.1.2...v0.2.0) - 2026-10-23
+
+### Added
+
+- [**breaking**] ISO 8601 times, a millisecond clock and --from/--until/--for run windows ([#16](https://github.com/scottschreckengaust/life/pull/16))
+- [**breaking**] --speed-up replaces --scale; add --format json
+
+### Fixed
+
+- the JSON golden ignores the version, so release bumps don't break it ([#15](https://github.com/scottschreckengaust/life/pull/15))
+
+### Other
+
+- --speed-up runs on the wall clock and lives the same day as --instant
+- only the release-tagger App creates v* tags, from the release environment ([#10](https://github.com/scottschreckengaust/life/pull/10))
+
 ## [0.1.2](https://github.com/scottschreckengaust/life/compare/v0.1.1...v0.1.2) - 2026-10-21
 
 ### Added
