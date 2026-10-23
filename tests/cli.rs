@@ -2,8 +2,23 @@
 
 use std::process::{Command, Stdio};
 
+/// How a run ended: an exit code, or the signal that ended it (Unix).
+#[derive(Debug, PartialEq)]
+enum End {
+    Code(i32),
+    Signal(i32),
+}
+
+fn end(status: std::process::ExitStatus) -> End {
+    #[cfg(unix)]
+    if let Some(sig) = std::os::unix::process::ExitStatusExt::signal(&status) {
+        return End::Signal(sig);
+    }
+    End::Code(status.code().expect("an exit code"))
+}
+
 /// Run spin-life with its stdout already closed by the reader, like `spin-life | head -0`.
-fn with_stdout_closed(args: &[&str]) -> (Option<i32>, String) {
+fn with_stdout_closed(args: &[&str]) -> (End, String) {
     let mut child = Command::new(env!("CARGO_BIN_EXE_spin-life"))
         .args(args)
         .stdout(Stdio::piped())
@@ -12,7 +27,7 @@ fn with_stdout_closed(args: &[&str]) -> (Option<i32>, String) {
         .unwrap();
     drop(child.stdout.take()); // the reader goes away before anything is written
     let out = child.wait_with_output().unwrap();
-    (out.status.code(), String::from_utf8_lossy(&out.stderr).into_owned())
+    (end(out.status), String::from_utf8_lossy(&out.stderr).into_owned())
 }
 
 #[test]
@@ -26,10 +41,11 @@ fn a_closed_pipe_is_not_a_panic() {
         &["presets"],
         &["--days", "1", "--speed-up", "3600000"],
     ] {
-        let (code, stderr) = with_stdout_closed(args);
+        let (end, stderr) = with_stdout_closed(args);
         assert!(!stderr.contains("panicked"), "{args:?} panicked: {stderr}");
-        // Unix: killed by SIGPIPE (no exit code), like `yes | head`; elsewhere: exit 0.
-        assert!(code.is_none() || code == Some(0), "{args:?} exited {code:?}: {stderr}");
+        // Unix: ended by SIGPIPE (13), like `yes | head`; elsewhere, or when the output fit in
+        // the pipe before it closed: exit 0. Anything else (a crash, exit 101) fails.
+        assert!(end == End::Signal(13) || end == End::Code(0), "{args:?} ended {end:?}: {stderr}");
     }
 }
 
