@@ -319,6 +319,20 @@ spin-life` keeps giving the latest stable version unless someone asks for `--ver
 `rehearsal/…` tag (proving tag creation works), a throwaway prerelease draft and `cargo publish --dry-run`, then
 deletes the tag and draft.
 
+Rehearse before merging anything that changes the release machinery. CI can't catch a broken release; only
+running the pipeline does. A PR touching these files gets a reminder comment
+([`rehearse-reminder.yml`](.github/workflows/rehearse-reminder.yml)):
+
+- [ ] `release.yml`, `release-cut.yml` or `release-plz.yml`, including Dependabot bumps of the actions they pin
+- [ ] `.github/release/smoke.sh` or the golden files it compares against
+- [ ] build targets, or `[package.metadata.binstall]` in `Cargo.toml`
+- [ ] `release-plz.toml`
+
+Rehearse with `git push origin HEAD:release/<name>`, watch `release.yml` go green, then delete the branch. Two things
+a rehearsal can't check: the release-tagger App and its key (run **release-cut** with `check_tagger` ticked), and
+crates.io trusted publishing (only a real release proves it; if it fails, the release stops before publishing and
+the draft waits for a re-run).
+
 It's assembled from off-the-shelf actions, pinned to commit SHAs:
 [`release-plz`](https://github.com/release-plz/action) (release PR, version, changelog),
 [`amannn/action-semantic-pull-request`](https://github.com/amannn/action-semantic-pull-request) (PR titles),
