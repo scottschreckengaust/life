@@ -287,15 +287,18 @@ Nobody bumps versions by hand. Releases come from the PR titles:
    merge to `main` updates it: the next version (from the commits, plus `cargo-semver-checks` on the public
    API) and the new `CHANGELOG.md` section. Only `feat`, `fix` and breaking changes open one; `docs`, `ci`,
    `chore` and the like ride along in the next release.
-3. **Merging the release PR cuts the release.** Merge it yourself whenever you like, or let
+3. **The release PR must cut a new version.** Its `version-is-new` check fails if the version is already on
+   crates.io (yanked versions included), already tagged, or already has a GitHub release, and release-cut checks
+   all three again right before it merges.
+4. **Merging the release PR cuts the release.** Merge it yourself whenever you like, or let
    [`release-cut.yml`](.github/workflows/release-cut.yml) merge it once it has sat unchanged for **6 hours** with
    green checks, so a burst of merges becomes one release. To release right now, run release-cut with
    `quiet_hours = 0`.
-4. **[`release.yml`](.github/workflows/release.yml) ships it**, each stage gating the next:
+5. **[`release.yml`](.github/workflows/release.yml) ships it**, each stage gating the next:
 
 | stage | what it proves |
 |---|---|
-| **plan** | the version has no published GitHub Release yet (a half-finished run is resumed, not skipped) |
+| **plan** | the version has no published GitHub Release yet (a half-finished run is resumed, not skipped), and isn't on crates.io unless this commit's own release put it there; a failed lookup stops the run instead of reading as "not published" |
 | **draft** | tag `vX.Y.Z` at the release commit, then a *draft* release on it, with the `CHANGELOG.md` section as its notes |
 | **build** | static (musl) binaries for Linux x86_64 and arm64, plus macOS arm64 and Windows, each with a `.sha256` and provenance, uploaded to the draft |
 | **crate** | the `.crate` crates.io will get, with a `.sha256` and provenance, uploaded to the draft |
