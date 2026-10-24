@@ -62,8 +62,25 @@ jobs:
             exit 0
           fi
 
+          # The release PR must be current: release-plz built its version and changelog from a
+          # main that has moved on if anything merged since. It regenerates the PR on every push
+          # to main, which also restarts the quiet clock, so waiting fixes this by itself.
+          base=$(gh api "repos/$REPO/git/ref/heads/main" -q .object.sha)
+          behind=$(gh api "repos/$REPO/compare/$base...$head" -q .behind_by)
+          if [[ "$behind" != 0 ]]; then
+            echo "::notice::release PR #$number is $behind commit(s) behind main; waiting for release-plz to regenerate it"
+            exit 0
+          fi
+
           gh pr merge "$number" -R "$REPO" --squash --match-head-commit "$head"
           sha=$(gh pr view "$number" -R "$REPO" --json mergeCommit -q .mergeCommit.oid)
+          # Nothing may have landed on main between that check and the merge: the release
+          # commit's parent must be the main we checked. Otherwise don't tag; a person decides.
+          parent=$(gh api "repos/$REPO/commits/$sha" -q '.parents[0].sha')
+          if [[ "$parent" != "$base" ]]; then
+            echo "::error::main moved from $base to $parent while #$number was merging, so $sha carries commits its changelog doesn't list. Not tagging it: check it, then tag and release it by hand or bump the version in a new release PR."
+            exit 1
+          fi
           version=$(gh api "repos/$REPO/contents/Cargo.toml?ref=$sha" -q .content | base64 -d |
             sed -n 's/^version = "\(.*\)"/\1/p' | head -1)
           [[ -n "$sha" && -n "$version" ]] || { echo "::error::merged #$number but couldn't read its commit/version"; exit 1; }
