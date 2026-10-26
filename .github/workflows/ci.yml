@@ -135,6 +135,9 @@ jobs:
         env:
           BASE: ${{ github.base_ref }}
         run: |
+          # A mutant that loops forever writing the diary would eat the runner's memory before
+          # its timeout; capped at 2 GiB a process, it fails to allocate and is caught instead.
+          ulimit -v 2097152
           git diff "origin/$BASE...HEAD" > pr.diff
           code=0
           cargo mutants --test-tool cargo --in-diff pr.diff || code=$?
@@ -148,13 +151,13 @@ jobs:
 
   mutants-full:
     if: true # TEMPORARY: the full run on this PR too, until no mutant survives
-    name: mutants (shard ${{ matrix.shard }}/12)
+    name: mutants (shard ${{ matrix.shard }}/8)
     runs-on: ubuntu-latest
-    timeout-minutes: 120
+    timeout-minutes: 60
     strategy:
       fail-fast: false
       matrix:
-        shard: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]
+        shard: [0, 1, 2, 3, 4, 5, 6, 7]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -165,13 +168,20 @@ jobs:
       - uses: taiki-e/install-action@a4d3f3f761dcd95cce1b72cb61cb6d1963438177 # v2.87.30
         with:
           tool: cargo-mutants@27.1.0
+      # Round-robin, so the slow mutants (the runtime's, which time out) spread over the shards.
       - name: mutate everything in this shard
         env:
           SHARD: ${{ matrix.shard }}
         run: |
+          ulimit -v 2097152 # see the mutants job
           code=0
-          cargo mutants --test-tool cargo --shard "$SHARD/12" || code=$?
+          cargo mutants --test-tool cargo --shard "$SHARD/8" --sharding round-robin || code=$?
           python3 .github/mutants/report.py mutants.out "$code"
+      - name: if the run itself died, which mutant was it on
+        if: failure()
+        run: |
+          last=$(ls -t mutants.out/log 2>/dev/null | head -1)
+          echo "::error title=mutants: last log::${last:-none}"
       - if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
