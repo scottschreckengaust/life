@@ -172,3 +172,75 @@ fn a_real_time_run_with_no_timers_waits_for_another_thread() {
     assert!(woke_at >= 1.0 + 0.04 / 3600.0, "{woke_at}");
     assert!(woke_at < 1.0 + 5.0 / 3600.0, "{woke_at}");
 }
+
+#[test]
+#[should_panic(expected = "no life here")]
+fn the_clock_is_gone_once_the_run_is_over() {
+    virt(async {});
+    rt::now();
+}
+
+#[test]
+fn a_timer_wakes_its_task_once_when_it_is_due() {
+    // An already-due sleep finishes without a timer, and a pending one isn't re-armed when
+    // its task is polled again; either would mean an extra, spurious wake-up.
+    let polls = Cell::new(0);
+    let mut life = Box::pin(async {
+        rt::sleep(0.0).await;
+        rt::sleep(1.0).await;
+    });
+    virt(std::future::poll_fn(|cx| {
+        polls.set(polls.get() + 1);
+        std::future::Future::poll(life.as_mut(), cx)
+    }));
+    assert_eq!(polls.get(), 2, "the first poll, then the one the timer's due for");
+}
+
+#[test]
+fn real_time_keeps_running_while_a_task_is_busy() {
+    // A window from 1.0 on the wall clock, one simulated hour per second. The task works
+    // (spins) for 0.3 s at the start, then sleeps 0.2 h: by then the wall clock is already
+    // past it, so the run ends after ~0.3 s, not 0.3 + 0.2. The busy time counts.
+    let started = Instant::now();
+    rt::block_on_live_from(Mode::RealTime(Duration::from_secs(1)), 0.0, 1.0, async {
+        rt::sleep(1.0).await;
+        let busy = Instant::now();
+        while busy.elapsed() < Duration::from_millis(300) {
+            spin_loop();
+        }
+        rt::sleep(0.2).await;
+    });
+    let took = started.elapsed();
+    assert!(took >= Duration::from_millis(300) && took < Duration::from_millis(450), "{took:?}");
+}
+
+/// This thread's CPU time so far in clock ticks, and how many times it has gone to sleep (Linux).
+#[cfg(target_os = "linux")]
+fn cpu_ticks_and_sleeps() -> (u64, u64) {
+    let stat = std::fs::read_to_string("/proc/thread-self/stat").unwrap();
+    // After the `(comm)` field: state is field 3, utime and stime are fields 14 and 15.
+    let fields: Vec<&str> = stat.rsplit_once(')').unwrap().1.split_whitespace().collect();
+    let ticks = fields[11].parse::<u64>().unwrap() + fields[12].parse::<u64>().unwrap();
+    let status = std::fs::read_to_string("/proc/thread-self/status").unwrap();
+    let sleeps = status
+        .lines()
+        .find_map(|l| l.strip_prefix("voluntary_ctxt_switches:"))
+        .map(|n| n.trim().parse::<u64>().unwrap())
+        .unwrap();
+    (ticks, sleeps)
+}
+
+#[test]
+#[cfg(target_os = "linux")]
+fn real_time_waits_without_burning_a_core() {
+    // Half a second of waiting for a timer is spent parked, in one long nap: not spinning, and
+    // not waking up every few microseconds to check the time.
+    let (ticks, sleeps) = cpu_ticks_and_sleeps();
+    let started = Instant::now();
+    rt::block_on(Mode::RealTime(Duration::from_millis(500)), 0.0, async { rt::sleep(1.0).await });
+    let took = started.elapsed();
+    let (ticks, sleeps) = (cpu_ticks_and_sleeps().0 - ticks, cpu_ticks_and_sleeps().1 - sleeps);
+    assert!(took >= Duration::from_millis(500), "{took:?}");
+    assert!(ticks < 15, "{ticks} ticks of CPU in {took:?}"); // ticks are 10 ms; spinning is ~50
+    assert!(sleeps < 20, "went to sleep {sleeps} times in {took:?}");
+}

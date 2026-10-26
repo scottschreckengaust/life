@@ -258,6 +258,20 @@ presets/         scott (the motto), parent, agent
 examples/motto.rs   the motto, verbatim
 ```
 
+## Testing
+
+`cargo test` runs everything in a few seconds: the reference life's scenarios, custom lives, every life-file
+error, the CLI as a shell sees it, golden outputs, and real-time runs against the wall clock. CI holds two lines:
+
+- **100% line coverage.** Every line in `src/` runs under the tests, the CLI included.
+  Locally: `cargo llvm-cov --all-targets` ([cargo-llvm-cov](https://github.com/taiki-e/cargo-llvm-cov)).
+- **No surviving mutants.** [cargo-mutants](https://mutants.rs) changes the code in small ways (`<` to `<=`, a
+  body replaced with a default value) and runs the tests against each change; every change has to make a test
+  fail. A PR mutates only the lines it changes; main gets everything. What isn't worth mutating, and the few
+  changes that can't alter behaviour, are listed with reasons in [`.cargo/mutants.toml`](.cargo/mutants.toml).
+  Locally: `cargo mutants` for everything (several hundred builds; `--shard 0/8` for an eighth of them), or
+  `git diff main > my.diff && cargo mutants --in-diff my.diff` for what you changed.
+
 ## Verify what you download
 
 Every release asset comes with a `.sha256` file and **signed build provenance**: a

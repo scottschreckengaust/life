@@ -77,6 +77,8 @@ fn run_finds_its_scenario_or_says_which_exist() {
         stderr.contains("no scenario `nope` in scott's life. Scenarios:") && stderr.contains("  chaos"),
         "{stderr}"
     );
+    // After a command, a command's name is the scenario's.
+    fails(&["run", "list", "-i"], 2, "no scenario `list` in scott's life");
     // No `week` scenario: the file's first one runs. No scenarios at all: an ordinary week.
     let firsts = life_file("firsts", "[pursuit.a]\n[scenario.zeta]\ndays = 1\n");
     assert!(succeeds(&["-L", &firsts, "-i", "-q"]).contains("/ zeta:"));
@@ -88,6 +90,11 @@ fn run_finds_its_scenario_or_says_which_exist() {
     );
     // --days caps at a year.
     assert!(succeeds(&["--days", "999", "-i", "-q"]).contains("(366 days, instant)"));
+}
+
+#[test]
+fn text_is_the_default_format_and_can_be_asked_for() {
+    assert_eq!(succeeds(&["--days", "1", "-i", "-f", "text"]), succeeds(&["--days", "1", "-i"]));
 }
 
 #[test]
@@ -117,6 +124,8 @@ fn bad_arguments_exit_2_with_usage() {
         (&["--speed-up", "fast"], "--speed-up needs a positive number"),
         (&["--wat"], "unknown option `--wat`"),
         (&["run", "chaos", "extra"], "unexpected argument `extra`"),
+        // A command name only counts first: after a scenario it's an extra argument.
+        (&["chaos", "list"], "unexpected argument `list`"),
         (&["--preset", "nobody", "-i"], "no preset named `nobody`"),
         (&["-L", "/nonexistent/x.toml", "-i"], "/nonexistent/x.toml: "),
     ] {

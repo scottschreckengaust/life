@@ -118,6 +118,35 @@ fn scheduled_windows_can_preempt() {
 }
 
 #[test]
+fn nothing_starts_or_interrupts_at_bedtime() {
+    // Dinner at bedtime, so the evening runs right up to it. A chance to do `b` at bedtime is
+    // too late to take, and too late to interrupt `a`, whose window runs past it.
+    let src = r#"
+        [pursuit.a]
+        when = "19:00/23:30"
+        [pursuit.b]
+        session = "PT1H"
+        preempts = ["a"]
+        [pursuit.c]
+        session = "PT1H"
+        [meals]
+        dinner = "22:30"
+        [scenario.late]
+        days = 2
+        events = [
+            { day = 1, at = "22:30", pursuit = "b", urgent = true },
+            { day = 2, skip = "a" },
+            { day = 2, at = "22:30", pursuit = "c" },
+        ]
+    "#;
+    let j = live(src, "late");
+    hours(&j, 1, "a", 4.5);
+    hours(&j, 1, "b", 0.0);
+    hours(&j, 2, "c", 0.0);
+    assert!(!j.said("preempts"), "{:?}", j.moments);
+}
+
+#[test]
 fn you_choose_what_wakes_you() {
     let src = r#"
         [pursuit.kids]
@@ -353,6 +382,13 @@ fn day_lists_and_single_names_are_accepted() {
         (0..7).map(|d| rules.works(d)).collect::<Vec<_>>(),
         [true, false, true, false, true, false, false]
     );
+    // A range can wrap around the weekend, and start on any day.
+    let works = |days: &str| {
+        let r = Rules::parse(&format!("[pursuit.a]\n[work]\ndays = \"{days}\"\n")).unwrap();
+        (0..7).map(|d| r.works(d)).collect::<Vec<_>>()
+    };
+    assert_eq!(works("fri-mon"), [true, false, false, false, true, true, true]);
+    assert_eq!(works("wed-fri"), [false, false, true, true, true, false, false]);
     assert!(Rules::preset_source("scott").unwrap().contains("[pursuit.geek]"));
     assert!(Rules::preset_source("nobody").is_none());
 }

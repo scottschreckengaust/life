@@ -50,6 +50,15 @@ fn a_closed_pipe_is_not_a_panic() {
 }
 
 #[test]
+#[cfg(unix)]
+fn a_closed_pipe_ends_the_run_by_sigpipe() {
+    // The run writes long after the reader has gone, so on Unix the restored SIGPIPE ends it
+    // (signal 13) rather than a write error (exit 0), and it ends at once, not after the day.
+    let (end, stderr) = with_stdout_closed(&["--days", "1", "--speed-up", "360000"]);
+    assert_eq!(end, End::Signal(13), "{stderr}");
+}
+
+#[test]
 fn one_day_is_one_spin() {
     let out =
         Command::new(env!("CARGO_BIN_EXE_spin-life")).args(["--days", "1", "-i", "-q"]).output().unwrap();
