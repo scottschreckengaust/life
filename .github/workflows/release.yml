@@ -186,7 +186,7 @@ jobs:
           workflow checked that before publishing this page.
           NOTES
           cat notes.md
-      - uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64 # v3.0.3
+      - uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64 # v3.0.3 # zizmor: ignore[superfluous-actions] kept as the off-the-shelf release step; the commit is pinned
         with:
           tag_name: ${{ needs.plan.outputs.tag }}
           name: ${{ needs.plan.outputs.name }} ${{ needs.plan.outputs.tag }}
@@ -372,7 +372,9 @@ jobs:
           [[ "$got" == "$WANT" ]] || { echo "::error::cargo package is not reproducible here; refusing to publish"; exit 1; }
       - name: already on crates.io (resuming)
         if: needs.plan.outputs.rehearsal != 'true' && needs.plan.outputs.published == 'true'
-        run: echo "::notice::${{ needs.plan.outputs.version }} is already on crates.io; verifying it instead of publishing again"
+        env:
+          VERSION: ${{ needs.plan.outputs.version }}
+        run: echo "::notice::$VERSION is already on crates.io; verifying it instead of publishing again"
       - name: rehearsal (dry run)
         if: needs.plan.outputs.rehearsal == 'true'
         run: cargo publish --locked --dry-run
@@ -405,13 +407,14 @@ jobs:
       WANT: ${{ needs.crate.outputs.sha256 }}
       FILE: ${{ needs.crate.outputs.file }}
       REHEARSAL: ${{ needs.plan.outputs.rehearsal }}
+      TAG: ${{ needs.plan.outputs.tag }}
     steps:
       - name: get the .crate
         run: |
           mkdir dl && cd dl
           if [[ "$REHEARSAL" == true ]]; then
             echo "rehearsal: checking the draft's .crate instead of crates.io"
-            gh release download "${{ needs.plan.outputs.tag }}" -R "$GITHUB_REPOSITORY" -p "$FILE"
+            gh release download "$TAG" -R "$GITHUB_REPOSITORY" -p "$FILE"
             exit 0
           fi
           index="https://index.crates.io/${NAME:0:2}/${NAME:2:2}/$NAME"
@@ -462,7 +465,7 @@ jobs:
     steps:
       - name: publish the release
         if: needs.plan.outputs.rehearsal != 'true'
-        uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64 # v3.0.3
+        uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64 # v3.0.3 # zizmor: ignore[superfluous-actions] kept as the off-the-shelf release step; the commit is pinned
         with:
           tag_name: ${{ needs.plan.outputs.tag }}
           draft: false
