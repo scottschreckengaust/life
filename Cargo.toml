@@ -1,6 +1,6 @@
 [package]
 name = "spin-life"
-version = "0.2.0"
+version = "0.2.1"
 edition = "2021"
 rust-version = "1.70"
 description = "Simulate a life from rules you write: priorities, preemption, interruptions and sleep, on a zero-dependency virtual-time async runtime."

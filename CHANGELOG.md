@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.1](https://github.com/scottschreckengaust/life/compare/v0.2.0...v0.2.1) - 2026-10-23
+
+### Fixed
+
+- stop quietly when stdout closes, and say "1 spin of the earth" ([#20](https://github.com/scottschreckengaust/life/pull/20))
+
+### Other
+
+- remind PRs that touch the release machinery to rehearse ([#21](https://github.com/scottschreckengaust/life/pull/21))
+
 ## [0.2.0](https://github.com/scottschreckengaust/life/compare/v0.1.2...v0.2.0) - 2026-10-23
 
 ### Added
