@@ -458,6 +458,11 @@ impl<'r> Life<'r> {
         self.log("😴 lights out");
 
         self.alarm.reset();
+        // Up until the alarm or past it (`up_late` into the morning): it rang while you were
+        // still up, and the reset just forgot it. Without this, you'd sleep through it forever.
+        if lights_out >= next_wake {
+            self.alarm.ring(Why::MORNING);
+        }
         loop {
             while !self.alarm.rung() {
                 self.dream(wired).await;

@@ -80,6 +80,9 @@ fn json_times_are_seconds_and_carry_the_window() {
     let got = stdout(&["--days", "1", "-i", "--from", "06:30", "--for", "PT2.5S", "-f", "json"]);
     assert!(got.contains(r#""window":{"from":23400,"until":23402.5}"#), "{got}");
     assert!(got.contains(r#""at":23400,"when":"d1 06:30""#), "{got}");
+    // Only --from: the window runs to the end of the run, the next morning's alarm (d2 06:30).
+    let from = stdout(&["--days", "1", "-i", "--from", "12:00", "-f", "json"]);
+    assert!(from.contains(r#""window":{"from":43200,"until":109800}"#), "{from}");
     let full = stdout(&["--days", "1", "-i", "-f", "json"]);
     assert!(full.contains(r#""window":null"#));
     assert!(full.contains(r#""start":23400,"end":25200"#), "breakfast 06:30-07:00 in seconds");

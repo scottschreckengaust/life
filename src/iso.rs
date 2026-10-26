@@ -193,6 +193,7 @@ mod tests {
         close(time("06:30:02.5").unwrap(), 6.5 + 2.5 * S);
         close(time("06:30:02,5").unwrap(), 6.5 + 2.5 * S);
         close(time("23:59:59.999").unwrap(), 24.0 - 0.001 * S);
+        close(time("00:00:00.123456789").unwrap(), 0.123 * S); // up to 9 digits, rounded to the ms
         close(time("00:00").unwrap(), 0.0);
         close(time("24:00").unwrap(), 24.0);
         close(time("24:00:00").unwrap(), 24.0);
@@ -213,6 +214,10 @@ mod tests {
             "06:30:02.",
             "aa:bb",
             "06:30:00:00",
+            "06:30:02.1234567890",
+            "06:30:02.5x",
+            "24:00:01",
+            "24:00:00.5",
         ] {
             let e = time(s).unwrap_err();
             assert!(e.contains("ISO 8601 time of day"), "{s}: {e}");
@@ -240,6 +245,8 @@ mod tests {
         assert!(duration("30m").unwrap_err().contains("PT1H30M"));
         assert!(duration("P1Y").unwrap_err().contains("use days (P30D)"));
         assert!(duration("P1M").unwrap_err().contains("use days (P30D)"));
+        assert!(duration("P1H").unwrap_err().contains("hours, minutes and seconds go after T"));
+        assert!(duration("PTT1H").unwrap_err().contains("T comes once"));
         for s in [
             "P",
             "PT",

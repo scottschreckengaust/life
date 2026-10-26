@@ -111,3 +111,80 @@ jobs:
           echo "$out"
           while IFS= read -r line; do echo "::error::$line"; done <<<"$out"
           exit 1
+
+  # Mutation testing (https://mutants.rs): cargo-mutants makes small changes to the code (`<` to
+  # `<=`, a body replaced with a default) and runs the tests against each one. A mutant every
+  # test still passes ("missed") is a gap in the tests. A PR mutates only the lines it changes;
+  # main gets everything, sharded (mutants-full). Survivors show up as annotations, one per
+  # file, listing each one. Configuration: .cargo/mutants.toml.
+  mutants:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 0 # the base branch, to diff against
+      - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # master
+        with:
+          toolchain: stable
+      - uses: taiki-e/install-action@a4d3f3f761dcd95cce1b72cb61cb6d1963438177 # v2.87.30
+        with:
+          tool: cargo-mutants@27.1.0
+      - name: mutate the lines this PR changes
+        env:
+          BASE: ${{ github.base_ref }}
+        run: |
+          # A mutant that loops forever writing the diary would eat the runner's memory before
+          # its timeout; capped at 2 GiB a process, it fails to allocate and is caught instead.
+          ulimit -v 2097152
+          git diff "origin/$BASE...HEAD" > pr.diff
+          code=0
+          cargo mutants --test-tool cargo --in-diff pr.diff || code=$?
+          python3 .github/mutants/report.py mutants.out "$code"
+      - if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: mutants.out
+          path: mutants.out
+          if-no-files-found: ignore
+
+  mutants-full:
+    if: github.event_name != 'pull_request'
+    name: mutants (shard ${{ matrix.shard }}/8)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [0, 1, 2, 3, 4, 5, 6, 7]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # master
+        with:
+          toolchain: stable
+      - uses: taiki-e/install-action@a4d3f3f761dcd95cce1b72cb61cb6d1963438177 # v2.87.30
+        with:
+          tool: cargo-mutants@27.1.0
+      # Round-robin, so the slow mutants (the runtime's, which time out) spread over the shards.
+      - name: mutate everything in this shard
+        env:
+          SHARD: ${{ matrix.shard }}
+        run: |
+          ulimit -v 2097152 # see the mutants job
+          code=0
+          cargo mutants --test-tool cargo --shard "$SHARD/8" --sharding round-robin || code=$?
+          python3 .github/mutants/report.py mutants.out "$code"
+      - name: if the run itself died, which mutant was it on
+        if: failure()
+        run: |
+          last=$(find mutants.out/log -type f -printf '%T@ %f\n' 2>/dev/null | sort -n | tail -1 | cut -d' ' -f2)
+          echo "::error title=mutants: last log::${last:-none}"
+      - if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: mutants.out-${{ matrix.shard }}
+          path: mutants.out
+          if-no-files-found: ignore

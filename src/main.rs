@@ -390,6 +390,7 @@ mod tests {
     fn wall_time_reads_naturally() {
         assert_eq!(wall(0.024), "0.0s");
         assert_eq!(wall(9.94), "9.9s");
+        assert_eq!(wall(10.0), "10s");
         assert_eq!(wall(42.4), "42s");
         assert_eq!(wall(168.0), "2m 48s");
         assert_eq!(wall(3599.4), "59m 59s");

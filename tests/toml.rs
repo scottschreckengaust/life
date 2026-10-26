@@ -70,6 +70,7 @@ fn keys_tables_and_line_endings() {
 #[test]
 fn errors_name_the_line() {
     rejects("a = 1 2", 1, "unexpected `2` after a value");
+    rejects("a = 1\rb = 2", 1, "after a value"); // a CR on its own doesn't end a line
     rejects("[a\nx = 1", 1, "expected `]` to close the header");
     rejects("[[a]\n", 1, "expected `]]` to close the header");
     rejects("a = 1\n[[a]]", 2, "`a` is an integer, not an array of tables");

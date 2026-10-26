@@ -34,6 +34,38 @@ fn a_window_is_the_full_run_clipped() {
 }
 
 #[test]
+fn a_window_with_only_a_start_runs_to_the_end_and_is_clipped() {
+    let from = iso::when("P2DT18H").unwrap();
+    let j = chaos(Some(from), None);
+    assert!(j.spans.iter().all(|s| s.start >= from), "nothing before --from");
+    assert_eq!(j.day_range(), 3..=7);
+}
+
+#[test]
+fn the_end_of_a_window_is_not_in_it() {
+    // Day 1's coffee is at 07:00: a window ending then leaves it out of the tally, the diary
+    // and the journal; one ending later has it.
+    let j = chaos(Some(6.5), Some(7.0));
+    assert_eq!(j.day(1).tally.coffee, 0);
+    assert!(!j.said("☕"), "{:?}", j.moments);
+    let j = chaos(Some(6.5), Some(7.5));
+    assert_eq!(j.day(1).tally.coffee, 1);
+    assert!(j.said("☕"));
+    // Journal::clip by itself, too.
+    let mut j = chaos(None, None);
+    j.clip(6.5, 7.0);
+    assert!(j.moments.iter().all(|m| m.at < 7.0), "{:?}", j.moments);
+}
+
+#[test]
+fn a_window_can_end_exactly_when_the_run_does() {
+    let out = spin_life(&["--days", "1", "-i", "-q", "--from", "06:30", "--until", "P1DT6H30M"]);
+    assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
+    let stdout = String::from_utf8(out.stdout).unwrap();
+    assert!(stdout.contains("from d1 06:30 until d2 06:30)"), "{stdout}");
+}
+
+#[test]
 fn no_window_changes_nothing() {
     let rules = Rules::preset("scott").unwrap();
     let life = Life::new(&rules, rules.scenario("chaos").unwrap());
@@ -78,6 +110,9 @@ fn bad_windows_exit_2() {
         (&["--for", "2s"], "--for: `2s` is not an ISO 8601 duration"),
         (&["--from", "6:30"], "--from: `6:30` is not an ISO 8601 time of day"),
         (&["list", "--for", "PT1S"], "only apply to run"),
+        (&["list", "--from", "06:30"], "only apply to run"),
+        (&["list", "--until", "07:00"], "only apply to run"),
+        (&["--from", "07:00", "--until", "07:00"], "must be after --from"),
     ] {
         let out = spin_life(&[&["-i"][..], args].concat());
         assert_eq!(out.status.code(), Some(2), "{args:?}");

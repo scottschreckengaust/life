@@ -63,6 +63,18 @@ fn half_a_second_at_actual_real_time() {
 }
 
 #[test]
+fn the_hint_says_how_long_the_window_takes() {
+    // 1 s of simulated time at 2×: half a second of real time, and the hint says so.
+    let out = Command::new(env!("CARGO_BIN_EXE_spin-life"))
+        .args(["--days", "1", "--speed-up", "2", "--from", "06:30", "--for", "PT1S", "--quiet"])
+        .output()
+        .unwrap();
+    let stdout = String::from_utf8(out.stdout).unwrap();
+    assert!(stdout.contains("\n⏱  about 0.5s of real time;"), "{stdout}");
+    assert!(stdout.contains("(1 day, 2× real time, from d1 06:30 until d1 06:30:01)"), "{stdout}");
+}
+
+#[test]
 fn a_late_window_skips_ahead_to_it() {
     // Day 6 at 10:00, five days in: virtual until the window, then 1 s of real time.
     let started = Instant::now();
