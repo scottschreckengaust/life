@@ -38,6 +38,10 @@ jobs:
       QUIET_HOURS: ${{ inputs.quiet_hours || '6' }}
       REPO: ${{ github.repository }}
     steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          sparse-checkout: .github/release
       - id: cut
         name: merge the release PR if it has been quiet
         run: |
@@ -70,6 +74,16 @@ jobs:
           if [[ "$behind" != 0 ]]; then
             echo "::notice::release PR #$number is $behind commit(s) behind main; waiting for release-plz to regenerate it"
             exit 0
+          fi
+
+          # Last look before merging: the version it cuts must be new everywhere. This token can
+          # see draft releases too.
+          cargo=$(gh api "repos/$REPO/contents/Cargo.toml?ref=$head" -q .content | base64 -d)
+          name=$(sed -n 's/^name = "\(.*\)"/\1/p' <<<"$cargo" | head -1)
+          next=$(sed -n 's/^version = "\(.*\)"/\1/p' <<<"$cargo" | head -1)
+          if ! .github/release/version-is-new.sh "$name" "$next"; then
+            echo "::error::release PR #$number would cut $name $next, which already exists; not merging"
+            exit 1
           fi
 
           gh pr merge "$number" -R "$REPO" --squash --match-head-commit "$head"

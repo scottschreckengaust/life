@@ -91,11 +91,25 @@ jobs:
             echo "::warning::$tag already points at $sha, not $GITHUB_SHA; bump the version"
             go=false
           fi
-          index="https://index.crates.io/${name:0:2}/${name:2:2}/$name"
+          # Already on crates.io? A failed lookup fails the run: it never reads as "not published".
+          # Only this commit's own half-finished release may find its version there (re-runs
+          # resume it); from anywhere else it's an error, before anything is tagged or drafted.
           published=false
-          if curl -fsS "$index" 2>/dev/null | jq -e --arg v "$version" 'select(.vers == $v)' >/dev/null; then
-            published=true
-            echo "::notice::$name $version is already on crates.io; publish will be skipped"
+          if ! $rehearsal; then
+            set +e; out=$(.github/release/version-is-new.sh --only crates "$name" "$version" 2>&1); found=$?; set -e
+            case $found in
+              0) ;;
+              1)
+                if tagged=$(git ls-remote --exit-code --tags origin "refs/tags/$tag" | cut -f1) && [[ "$tagged" == "$GITHUB_SHA" ]]; then
+                  published=true
+                  echo "::notice::$name $version is already on crates.io from this release; publish will be skipped (resuming)"
+                else
+                  echo "::error::$name $version is already on crates.io, but not from a release of this commit; bump the version"
+                  exit 1
+                fi
+                ;;
+              *) echo "$out"; exit 1 ;;
+            esac
           fi
           $go || echo "::notice::nothing to release: the next release PR will bump the version"
           { echo "go=$go"; echo "published=$published"; echo "prerelease=$prerelease"; echo "name=$name"; echo "version=$version"; echo "tag=$tag"; echo "rehearsal=$rehearsal"; } >>"$GITHUB_OUTPUT"
