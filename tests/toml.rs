@@ -41,8 +41,11 @@ fn values() {
 
 #[test]
 fn escapes() {
-    let t = ok(r#"a = "tab\there\nquote\" slash\\ snow☃""#);
-    assert_eq!(t["a"], s("tab\there\nquote\" slash\\ snow☃"));
+    // Built with concat! so the \u escape reaches the parser as six ASCII characters.
+    let src = concat!("a = \"tab\\there\\nquote\\\" slash\\\\ snow\\", "u2603\"");
+    assert!(src.is_ascii(), "{src}");
+    let t = ok(src);
+    assert_eq!(t["a"], s("tab\there\nquote\" slash\\ snow\u{2603}"));
 }
 
 #[test]

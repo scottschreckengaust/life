@@ -56,12 +56,6 @@ def main(path):
         if missed:
             bad += 1
             print(f"::error file={name},line={min(missed)},title=uncovered::lines {ranges(missed)}")
-    probe = os.environ.get("COVERAGE_PROBE")  # e.g. "src/toml.rs:236-262": print raw line counts
-    if probe:
-        pf, pr = probe.split(":")
-        lo, hi = map(int, pr.split("-"))
-        counts = {n: h for n, h in files[pf]["lines"].items() if lo <= n <= hi}
-        print(f"::notice file={pf},line={lo},title=probe::{sorted(counts.items())}")
     with open(os.environ.get("GITHUB_STEP_SUMMARY", os.devnull), "a") as out:
         out.write("### coverage\n\n" + "\n".join(summary) + "\n")
     print("\n".join(summary))
