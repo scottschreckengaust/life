@@ -24,6 +24,8 @@ jobs:
       - run: cargo clippy --all-targets -- -D warnings
       - run: cargo test --locked
       - run: for f in presets/*.toml; do cargo run -q --release -- check "$f"; done
+      - name: release scripts' tests
+        run: bash .github/release/test-version-is-new.sh
       - name: --format json parses as JSON
         run: cargo run -q --release -- chaos -i -f json | jq -e '(.days | length) == 7 and (.activities | length) == 9'
       - run: cargo package --locked
@@ -33,6 +35,23 @@ jobs:
           rm -rf target/package && touch src/*.rs && cargo package --locked -q
           b=$(sha256sum target/package/*.crate | cut -d' ' -f1)
           echo "$a"; echo "$b"; [ "$a" = "$b" ]
+
+  # On the release PR: the version it would cut must not exist anywhere yet (crates.io,
+  # including yanked versions, a tag, or a GitHub release). release-cut checks again right
+  # before merging; this check makes a doomed release PR red as soon as it's opened.
+  version-is-new:
+    if: startsWith(github.head_ref || github.ref_name, 'release-plz-')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: the version is new
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          meta=$(cargo metadata --no-deps --format-version 1)
+          .github/release/version-is-new.sh "$(jq -r '.packages[0].name' <<<"$meta")" "$(jq -r '.packages[0].version' <<<"$meta")"
 
   # Every line in src/ runs under the tests, the CLI included (the tests run the
   # real binary). Uncovered lines show up as annotations, one per file.

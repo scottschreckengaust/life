@@ -1,0 +1,67 @@
+name: probe-required-checks
+
+# Temporary experiment for #23: does CI that a bot *dispatches* on a bot-made PR satisfy a
+# ruleset's required status checks? release-plz's PRs only ever get CI that way.
+#
+# 1. An admin creates a ruleset "probe-required-checks": target branches `probe/**`,
+#    rule "Require status checks to pass" with the check `test` (and "require branches to be
+#    up to date").
+# 2. Run this workflow from main. It makes probe/base and probe/head the way release-plz does
+#    (GITHUB_TOKEN, so no CI starts by itself), opens a PR, dispatches ci.yml on the head,
+#    waits for it, and reports the PR's merge state on #23: CLEAN means the dispatched checks
+#    count, BLOCKED means they don't. Then it cleans up.
+# 3. Delete the ruleset and this workflow.
+
+on:
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: probe-required-checks
+
+jobs:
+  probe:
+    if: github.actor == 'scottschreckengaust' && github.triggering_actor == 'scottschreckengaust'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # the two probe branches
+      pull-requests: write # the probe PR
+      actions: write # dispatch ci.yml
+      issues: write # report on #23
+    env:
+      GH_TOKEN: ${{ github.token }}
+      REPO: ${{ github.repository }}
+    steps:
+      - name: probe
+        shell: bash
+        run: |
+          set -euo pipefail
+          main=$(gh api "repos/$REPO/git/ref/heads/main" -q .object.sha)
+          for b in probe/base probe/head; do
+            gh api -X DELETE "repos/$REPO/git/refs/heads/$b" 2>/dev/null || true
+            gh api "repos/$REPO/git/refs" -f ref="refs/heads/$b" -f sha="$main" -q .ref
+          done
+          # One commit on probe/head, made with the API (as release-plz's token would).
+          gh api -X PUT "repos/$REPO/contents/probe.txt" -f branch=probe/head \
+            -f message="chore: probe required checks" -f content="$(printf 'probe %s\n' "$GITHUB_RUN_ID" | base64)" -q .commit.sha
+          head=$(gh api "repos/$REPO/git/ref/heads/probe/head" -q .object.sha)
+          pr=$(gh api "repos/$REPO/pulls" -f title="chore: probe required checks (#23)" -f head=probe/head -f base=probe/base \
+            -f body="Temporary, for #23. Closed automatically." -q .number)
+          gh workflow run ci.yml -R "$REPO" --ref probe/head
+          # Wait for the dispatched `test` check on the head commit.
+          for _ in $(seq 1 60); do
+            st=$(gh api "repos/$REPO/commits/$head/check-runs?check_name=test" -q '.check_runs[0] | "\(.status) \(.conclusion)"' || true)
+            [[ "$st" == "completed "* ]] && break
+            sleep 15
+          done
+          sleep 20 # let GitHub recompute the merge state
+          state=$(gh pr view "$pr" -R "$REPO" --json mergeStateStatus -q .mergeStateStatus)
+          verdict="unclear ($state): check the ruleset targets probe/** and requires \`test\`"
+          [[ "$state" == CLEAN ]] && verdict="**dispatched CI counts**: the probe PR is CLEAN with \`test\` required"
+          [[ "$state" == BLOCKED ]] && verdict="**dispatched CI does NOT count**: the probe PR is BLOCKED although \`test\` passed"
+          body="Probe run $GITHUB_SERVER_URL/$REPO/actions/runs/$GITHUB_RUN_ID: \`test\` on the dispatched run: $st. $verdict."
+          echo "$body" >>"$GITHUB_STEP_SUMMARY"
+          gh issue comment 23 -R "$REPO" --body "$body"
+          gh pr close "$pr" -R "$REPO" --delete-branch || true
+          gh api -X DELETE "repos/$REPO/git/refs/heads/probe/base" || true
