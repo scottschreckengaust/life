@@ -45,6 +45,21 @@ jobs:
           toolchain: "1.70"
       - run: cargo test --locked
 
+  # Security lint for the workflows: dangerous triggers, template injection, over-broad
+  # permissions, unpinned or impostor actions, persisted credentials. Findings fail the job and
+  # show as annotations; a deliberate exception needs `# zizmor: ignore[<audit>] <why>` inline.
+  zizmor:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: zizmor
+        env:
+          GH_TOKEN: ${{ github.token }} # online audits: impostor commits, known-vulnerable actions
+          ZIZMOR: "1.31.1"
+        run: pipx run "zizmor==$ZIZMOR" --format github .
+
   actionlint:
     runs-on: ubuntu-latest
     steps:

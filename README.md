@@ -276,6 +276,20 @@ Cargo verifies every download against it, and `Cargo.lock` pins it. The release 
 its own provenance, and the release workflow proves it is byte-for-byte the file crates.io serves, so you can run
 `gh attestation verify` on a `.crate` downloaded from crates.io too.
 
+## Contributing from a fork
+
+Fork PRs are welcome, and they can't reach anything that ships:
+
+- **CI** runs on `pull_request` with a read-only token and no secrets, after a maintainer approves the run.
+- **The two workflows that run with write access** (`pr-title`, and `rehearse-reminder`, which may comment that a
+  change needs a rehearsal) never check out or run the PR's code; they read its title and file list.
+- **Releases** only run from `main` and `v*` tags, in the `release` environment, which is the only place the
+  release-tagger key and crates.io's trust live. Only the release-tagger App can create `v*` tags.
+- **Code owners** ([`.github/CODEOWNERS`](.github/CODEOWNERS)) must review changes to `.github/`, `Cargo.toml`,
+  `Cargo.lock`, `release-plz.toml` and `presets/`.
+- **[zizmor](https://github.com/zizmorcore/zizmor)** checks every workflow change for dangerous triggers, template
+  injection, over-broad permissions and unpinned actions.
+
 ## Releasing
 
 Nobody bumps versions by hand. Releases come from the PR titles:

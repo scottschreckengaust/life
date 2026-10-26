@@ -1,11 +1,15 @@
 # Keeps the commit-pinned actions current: one grouped PR a week, titled
 # "ci: bump ..." so it passes the PR-title check and never cuts a release by itself.
+# A release must be a week old before Dependabot proposes it, so a compromised release has
+# time to be noticed and pulled first.
 version: 2
 updates:
   - package-ecosystem: github-actions
     directory: /
     schedule:
       interval: weekly
+    cooldown:
+      default-days: 7
     commit-message:
       prefix: ci
     groups:
@@ -16,6 +20,8 @@ updates:
     directory: /
     schedule:
       interval: weekly
+    cooldown:
+      default-days: 7
     commit-message:
       prefix: fix
       prefix-development: ci
