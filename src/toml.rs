@@ -142,12 +142,15 @@ impl Parser<'_> {
                     self.blank();
                     let close = if array { "]]" } else { "]" };
                     for _ in 0..close.len() {
-                        if self.bump() != Some(b']') {
+                        // Look before taking: a newline here would move the error to the next line.
+                        if self.peek() != Some(b']') {
                             return self.err(format!("expected `{close}` to close the header"));
                         }
+                        self.bump();
                     }
-                    self.end_of_line()?;
+                    // Errors about this header belong to its line, not the one end_of_line moves to.
                     let line = self.line;
+                    self.end_of_line()?;
                     let fail = |msg: String| Error { line, msg };
                     if array {
                         let (last, parents) = path.split_last().expect("key is never empty");
@@ -155,8 +158,10 @@ impl Parser<'_> {
                         match parent.entry(last.clone()).or_insert_with(|| Value::Array(Vec::new())) {
                             Value::Array(items) => items.push(Value::Table(Table::new())),
                             other => {
-                                return self
-                                    .err(format!("`{last}` is {}, not an array of tables", other.kind()))
+                                return Err(fail(format!(
+                                    "`{last}` is {}, not an array of tables",
+                                    other.kind()
+                                )))
                             }
                         }
                     } else {
@@ -166,13 +171,14 @@ impl Parser<'_> {
                 Some(_) => {
                     let key = self.key()?;
                     self.blank();
-                    if self.bump() != Some(b'=') {
+                    if self.peek() != Some(b'=') {
                         return self.err(format!("expected `=` after `{}`", key.join(".")));
                     }
+                    self.bump();
                     self.blank();
                     let value = self.value()?;
+                    let line = self.line;
                     self.end_of_line()?;
-                    let line = self.line - 1;
                     let table = open(&mut root, &path).map_err(|msg| Error { line, msg })?;
                     insert(table, &key, value).map_err(|msg| Error { line, msg })?;
                 }
@@ -225,10 +231,15 @@ impl Parser<'_> {
         self.bump();
         let mut out = Vec::new();
         loop {
-            match self.bump() {
+            // Look before taking, so the error is on the string's own line.
+            let c = match self.peek() {
                 None | Some(b'\n') => return self.err("unterminated string"),
-                Some(b'"') => break,
-                Some(b'\\') => match self.bump() {
+                Some(c) => c,
+            };
+            self.i += 1; // not a newline, so still the same line
+            match c {
+                b'"' => break,
+                b'\\' => match self.bump() {
                     Some(b'n') => out.push(b'\n'),
                     Some(b't') => out.push(b'\t'),
                     Some(b'"') => out.push(b'"'),
@@ -239,13 +250,17 @@ impl Parser<'_> {
                             .ok()
                             .and_then(|h| u32::from_str_radix(h, 16).ok())
                             .and_then(char::from_u32);
-                        let Some(ch) = ch else { return self.err("bad \\u escape") };
-                        self.i += 4;
-                        out.extend_from_slice(ch.encode_utf8(&mut [0; 4]).as_bytes());
+                        match ch {
+                            Some(ch) => {
+                                self.i += 4;
+                                out.extend_from_slice(ch.encode_utf8(&mut [0; 4]).as_bytes());
+                            }
+                            None => return self.err("bad \\u escape"),
+                        }
                     }
                     _ => return self.err("unknown escape in string"),
                 },
-                Some(c) => out.push(c),
+                c => out.push(c),
             }
         }
         String::from_utf8(out).or_else(|_| self.err("string is not valid UTF-8"))
@@ -255,10 +270,11 @@ impl Parser<'_> {
         self.bump();
         let start = self.i;
         loop {
-            match self.bump() {
-                None | Some(b'\n') => return self.err("unterminated string"),
-                Some(b'\'') => break,
-                Some(_) => {}
+            if matches!(self.peek(), None | Some(b'\n')) {
+                return self.err("unterminated string");
+            }
+            if self.bump() == Some(b'\'') {
+                break;
             }
         }
         String::from_utf8(self.s[start..self.i - 1].to_vec())
@@ -324,16 +340,23 @@ impl Parser<'_> {
         loop {
             let key = self.key()?;
             self.blank();
-            if self.bump() != Some(b'=') {
+            if self.peek() != Some(b'=') {
                 return self.err(format!("expected `=` after `{}`", key.join(".")));
             }
+            self.bump();
             self.blank();
             let value = self.value()?;
             insert(&mut table, &key, value).or_else(|m| self.err(m))?;
             self.blank();
-            match self.bump() {
-                Some(b',') => self.blank(),
-                Some(b'}') => return Ok(Value::Table(table)),
+            match self.peek() {
+                Some(b',') => {
+                    self.bump();
+                    self.blank();
+                }
+                Some(b'}') => {
+                    self.bump();
+                    return Ok(Value::Table(table));
+                }
                 _ => return self.err("expected `,` or `}` in inline table (inline tables stay on one line)"),
             }
         }
