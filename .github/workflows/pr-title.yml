@@ -5,7 +5,7 @@ name: pr-title
 # breaking changes (feat!: ...).
 
 on:
-  pull_request_target: # reads the title only; never checks out the PR's code
+  pull_request_target: # zizmor: ignore[dangerous-triggers] reads the title only; never checks out the PR's code
     types: [opened, edited, synchronize, reopened]
 
 permissions:

@@ -5,7 +5,7 @@ name: rehearse-reminder
 # the pipeline does.
 
 on:
-  pull_request_target: # reads the PR's file list only; never checks out the PR's code
+  pull_request_target: # zizmor: ignore[dangerous-triggers] reads the PR's file list only; never checks out the PR's code
     types: [opened, synchronize, reopened]
     paths:
       - .github/workflows/release.yml
