@@ -115,8 +115,8 @@ pub struct Life<'r> {
     rules: &'r Rules,
     days: usize,
     plans: Vec<Plan>,
-    /// Print the diary as it happens; switched off if stdout goes away.
-    echo: Cell<bool>,
+    /// Where the diary goes as it happens, if anywhere; dropped if writing to it fails.
+    echo: Echo,
     alarm: Arc<Alarm>,
     journal: RefCell<Journal>,
     today: Cell<usize>,
@@ -126,6 +126,15 @@ pub struct Life<'r> {
     /// Only `[from, until)` is reported (absolute hours); see [`Life::window`].
     from: Option<f64>,
     until: Option<f64>,
+}
+
+/// The diary's live output.
+struct Echo(RefCell<Option<Box<dyn std::io::Write>>>);
+
+impl std::fmt::Debug for Echo {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(if self.0.borrow().is_some() { "Echo(on)" } else { "Echo(off)" })
+    }
 }
 
 /// Records how long an activity ran when it ends, *or when it is cancelled*.
@@ -250,7 +259,7 @@ impl<'r> Life<'r> {
             rules,
             days: n,
             plans,
-            echo: Cell::new(false),
+            echo: Echo(RefCell::new(None)),
             alarm: Arc::default(),
             journal: RefCell::new(Journal::new(n, pursuits, rules.sleep.signal.clone())),
             today: Cell::new(1),
@@ -262,9 +271,20 @@ impl<'r> Life<'r> {
         }
     }
 
-    /// Print the diary as it happens.
+    /// Print the diary to stdout as it happens.
     pub fn echo(self, on: bool) -> Self {
-        self.echo.set(on);
+        if on {
+            self.echo_to(std::io::stdout())
+        } else {
+            *self.echo.0.borrow_mut() = None;
+            self
+        }
+    }
+
+    /// Write the diary to `out` as it happens, one line per entry. If a write fails (a closed
+    /// pipe, a full disk), the echo stops; the journal still has everything.
+    pub fn echo_to(self, out: impl std::io::Write + 'static) -> Self {
+        *self.echo.0.borrow_mut() = Some(Box::new(out));
         self
     }
 
@@ -654,11 +674,12 @@ impl<'r> Life<'r> {
 
     fn log(&self, note: impl Into<String>) {
         let (at, note) = (self.now(), note.into());
-        if self.echo.get() && self.in_window(at) {
-            use std::io::Write as _;
-            // A closed stdout (`spin-life | head`) stops the echo; it is not worth a panic.
-            if writeln!(std::io::stdout(), "{}  {note}", hhmm(at)).is_err() {
-                self.echo.set(false);
+        if self.in_window(at) {
+            let mut echo = self.echo.0.borrow_mut();
+            // A failing writer (`spin-life | head`) stops the echo; it is not worth a panic.
+            let failed = echo.as_mut().is_some_and(|out| writeln!(out, "{}  {note}", hhmm(at)).is_err());
+            if failed {
+                *echo = None;
             }
         }
         self.journal.borrow_mut().moments.push(Moment { at, note });

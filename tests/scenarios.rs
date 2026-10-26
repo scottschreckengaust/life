@@ -281,3 +281,47 @@ fn real_time_mode_matches_virtual_time_roughly() {
     assert!(close(j.day(1).hours("work"), 7.0), "{}", j.timeline());
     assert!(close(j.day(1).hours("sleep"), 8.0), "{}", j.timeline());
 }
+
+#[test]
+fn the_diary_echoes_to_any_writer_and_a_failing_one_just_stops_it() {
+    use std::{cell::RefCell, io, rc::Rc};
+    /// Accepts `left` lines, then fails every write, like a reader that went away.
+    struct GoesAway {
+        got: Rc<RefCell<String>>,
+        left: usize,
+        tries: Rc<RefCell<usize>>,
+    }
+    impl io::Write for GoesAway {
+        fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+            *self.tries.borrow_mut() += 1;
+            if self.left == 0 {
+                return Err(io::ErrorKind::BrokenPipe.into());
+            }
+            if buf.ends_with(b"\n") {
+                self.left -= 1;
+            }
+            self.got.borrow_mut().push_str(std::str::from_utf8(buf).unwrap());
+            Ok(buf.len())
+        }
+        fn flush(&mut self) -> io::Result<()> {
+            Ok(())
+        }
+    }
+    let rules = Rules::preset("scott").unwrap();
+    let (got, tries) = (Rc::new(RefCell::new(String::new())), Rc::new(RefCell::new(0)));
+    let out = GoesAway { got: got.clone(), left: 2, tries: tries.clone() };
+    let j = Life::new(&rules, rules.scenario("happy-path").unwrap()).echo_to(out).run(Mode::Virtual);
+    assert_eq!(
+        got.borrow().lines().collect::<Vec<_>>(),
+        ["d1 06:30  ⏰ rise and shine", "d1 06:30  🍳 breakfast"]
+    );
+    let tries_after = *tries.borrow();
+    assert!(j.moments.len() > 10, "the journal keeps everything");
+    // After the failure the echo is gone: no more write attempts for the rest of the run.
+    assert!(tries_after < 10, "{tries_after} write attempts");
+    // echo(false) turns it off; echo(true) is stdout.
+    let quiet = Life::new(&rules, rules.scenario("happy-path").unwrap()).echo(false);
+    assert!(format!("{quiet:?}").contains("Echo(off)"));
+    let loud = Life::new(&rules, rules.scenario("happy-path").unwrap()).echo(true);
+    assert!(format!("{loud:?}").contains("Echo(on)"));
+}

@@ -250,9 +250,13 @@ impl Parser<'_> {
                             .ok()
                             .and_then(|h| u32::from_str_radix(h, 16).ok())
                             .and_then(char::from_u32);
-                        let Some(ch) = ch else { return self.err("bad \\u escape") };
-                        self.i += 4;
-                        out.extend_from_slice(ch.encode_utf8(&mut [0; 4]).as_bytes());
+                        match ch {
+                            Some(ch) => {
+                                self.i += 4;
+                                out.extend_from_slice(ch.encode_utf8(&mut [0; 4]).as_bytes());
+                            }
+                            None => return self.err("bad \\u escape"),
+                        }
                     }
                     _ => return self.err("unknown escape in string"),
                 },

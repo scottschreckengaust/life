@@ -23,13 +23,23 @@ macro_rules! outln {
     }};
 }
 
-/// Stdout failed: a closed pipe is a normal way to stop; anything else is a real error.
+/// Stdout failed: stop, quietly if it was just a closed pipe.
 fn closed(e: std::io::Error) -> ! {
-    if e.kind() == std::io::ErrorKind::BrokenPipe {
-        exit(0)
+    let code = write_failure_exit_code(&e);
+    if code != 0 {
+        eprintln!("spin-life: can't write output: {e}");
     }
-    eprintln!("spin-life: can't write output: {e}");
-    exit(1)
+    exit(code)
+}
+
+/// A closed pipe (`spin-life | head`) is a normal way to stop: exit 0. On Unix the restored
+/// SIGPIPE usually ends us first; on Windows this is how it ends. Anything else is an error.
+fn write_failure_exit_code(e: &std::io::Error) -> i32 {
+    if e.kind() == std::io::ErrorKind::BrokenPipe {
+        0
+    } else {
+        1
+    }
 }
 
 /// Rust ignores SIGPIPE, which turns a closed pipe into write errors. Restore the default,
@@ -366,7 +376,15 @@ fn wall(secs: f64) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::wall;
+    use super::{wall, write_failure_exit_code};
+    use std::io::{Error, ErrorKind};
+
+    #[test]
+    fn a_closed_pipe_exits_0_and_other_write_errors_exit_1() {
+        assert_eq!(write_failure_exit_code(&Error::from(ErrorKind::BrokenPipe)), 0);
+        assert_eq!(write_failure_exit_code(&Error::from(ErrorKind::WriteZero)), 1);
+        assert_eq!(write_failure_exit_code(&Error::from(ErrorKind::PermissionDenied)), 1);
+    }
 
     #[test]
     fn wall_time_reads_naturally() {
