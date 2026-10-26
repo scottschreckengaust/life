@@ -34,7 +34,7 @@ jobs:
           b=$(sha256sum target/package/*.crate | cut -d' ' -f1)
           echo "$a"; echo "$b"; [ "$a" = "$b" ]
 
-  # Every line and function in src/ runs under the tests, the CLI included (the tests run the
+  # Every line in src/ runs under the tests, the CLI included (the tests run the
   # real binary). Uncovered lines show up as annotations, one per file.
   coverage:
     runs-on: ubuntu-latest
@@ -50,7 +50,7 @@ jobs:
         with:
           tool: cargo-llvm-cov@0.9.1
       - run: cargo llvm-cov --locked --all-targets --lcov --output-path lcov.info
-      - name: 100% of lines and functions
+      - name: 100% of lines
         run: python3 .github/coverage/check.py lcov.info
 
   msrv:
