@@ -12,7 +12,7 @@ documentation = "https://docs.rs/spin-life"
 readme = "README.md"
 keywords = ["simulation", "async", "virtual-time", "scheduling", "life"]
 categories = ["simulation", "asynchronous", "command-line-utilities"]
-exclude = [".github/", "release-plz.toml"]
+exclude = [".cargo/", ".github/", "release-plz.toml"]
 
 # Zero dependencies: the runtime, select!, join!, the alarm and the config parser are all in here.
 [dependencies]
@@ -41,3 +41,9 @@ pkg-url = "{ repo }/releases/download/v{ version }/{ name }-aarch64-unknown-linu
 [package.metadata.binstall.overrides.x86_64-pc-windows-msvc]
 pkg-url = "{ repo }/releases/download/v{ version }/{ name }-{ target }.zip"
 pkg-fmt = "zip"
+
+# What cargo-mutants builds each mutant with (.cargo/mutants.toml): the test profile without
+# debug info, so the many test binaries link faster.
+[profile.mutants]
+inherits = "test"
+debug = 0

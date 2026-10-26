@@ -1,0 +1,30 @@
+# cargo-mutants (https://mutants.rs): CI runs it on every PR (`--in-diff`, only the lines the PR
+# changes) and on main (everything, sharded). See the `mutants` jobs in .github/workflows/ci.yml.
+#
+# Keep this short. Code that matters gets a test that kills its mutants, not a line here.
+
+exclude_globs = [
+    # A demo of the motto's hot spin on a real thread; it isn't the library and no test runs it.
+    "examples/**",
+    # The tests themselves: mutating a helper or the timing slack in tests/realtime.rs (`* 0.95`,
+    # `+ 2.0`) only tests the tests.
+    "tests/**",
+]
+
+exclude_re = [
+    # Debug output isn't behaviour; the derived impls aren't mutated anyway, this skips the manual one.
+    "<impl .*Debug for ",
+]
+
+# The `out!`/`outln!` macros in src/main.rs need no entry: cargo-mutants doesn't mutate inside
+# `macro_rules!`. `closed`, which they call, is covered by the closed-pipe and /dev/full tests.
+
+# The real-time tests (tests/realtime.rs) take a few seconds of wall clock whatever the mutant,
+# and a slow runner stretches every test binary; leave room so they don't time out spuriously.
+timeout_multiplier = 3.0
+minimum_test_timeout = 30
+
+# Doctests and examples repeat what the unit and integration tests check and are slow to build;
+# no debug info makes the many test binaries link faster. See [profile.mutants] in Cargo.toml.
+additional_cargo_test_args = ["--tests"]
+profile = "mutants"
