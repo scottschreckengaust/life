@@ -42,8 +42,9 @@ def main(out, code):
         msg = "\n".join(text for _, text in missed)
         title = f"{len(missed)} surviving mutant{'s' if len(missed) > 1 else ''}"
         print(f"::error file={file},line={missed[0][0]},title={title}::{escape(msg)}")
-    for m in counts["timeout"]:
-        print(f"timed out (fine): {m}")
+    if counts["timeout"]:
+        msg = "\n".join(counts["timeout"])
+        print(f"::notice title={n['timeout']} timed out (fine; a hang can't pass)::{escape(msg)}")
 
     print(
         f"::notice title=mutants::{total} mutants: {n['caught']} caught, {n['missed']} missed, "

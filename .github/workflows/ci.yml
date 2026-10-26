@@ -150,10 +150,10 @@ jobs:
           if-no-files-found: ignore
 
   mutants-full:
-    if: true # TEMPORARY: the full run on this PR too, until no mutant survives
+    if: github.event_name != 'pull_request'
     name: mutants (shard ${{ matrix.shard }}/8)
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
