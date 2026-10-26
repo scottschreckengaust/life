@@ -55,6 +55,15 @@ fn happy_path_wake_eat_work_lunch_family_eat_sleep() {
 }
 
 #[test]
+fn a_span_starts_at_its_first_moment_and_ends_before_its_last() {
+    // Breakfast is [06:30, 07:00): at 07:00 you are already living, not still eating.
+    let j = custom(1, "");
+    doing(&j, 1, 6.5, "eat");
+    doing(&j, 1, 7.0, "living");
+    assert_eq!(j.doing(1, 6.0), None, "nothing happened before the first alarm");
+}
+
+#[test]
 fn happy_path_repeats() {
     let j = scenario("happy-path");
     assert_eq!(j.days(), 3);
@@ -138,10 +147,34 @@ fn a_big_wave_breaks_into_geeking() {
 }
 
 #[test]
+fn a_swell_that_comes_as_geeking_ends_does_not_preempt_it() {
+    // Geeking runs 17:00-19:00; a big swell at 19:00 doesn't cut it short, and at 19:00
+    // the hour of family time left comes first.
+    let j = custom(
+        1,
+        r#"{ day = 1, at = "17:00", signal = "idea" }, { day = 1, at = "19:00", pursuit = "surf", urgent = true }"#,
+    );
+    hours(&j, 1, "geek", 2.0);
+    hours(&j, 1, "people", 1.0);
+    hours(&j, 1, "surf", 0.0);
+    assert!(!j.said("preempts"), "{:?}", j.moments);
+}
+
+#[test]
+fn a_swell_that_is_gone_can_not_preempt() {
+    // A big swell at 14:00 lasts 3 hours: gone at 17:00, just as the idea's geeking starts.
+    let j = custom(2, r#"{ day = 2, at = "14:00", pursuit = "surf", urgent = true }"#);
+    hours(&j, 2, "geek", 2.0);
+    hours(&j, 2, "surf", 0.0);
+    assert!(!j.said("preempts"), "{:?}", j.moments);
+}
+
+#[test]
 fn a_big_wave_does_not_break_family_time() {
     let j = custom(1, r#"{ day = 1, at = "18:30", pursuit = "surf", urgent = true }"#);
     hours(&j, 1, "people", 2.0);
     hours(&j, 1, "surf", 0.0);
+    assert!(!j.said("preempts"), "nothing was dropped");
 }
 
 #[test]
@@ -153,6 +186,13 @@ fn dawn_patrol_rings_the_alarm_early() {
     doing(&j, 2, 9.5, "work"); // still on time for work
     hours(&j, 1, "sleep", 7.0);
     assert!(!j.day(1).tally.signal, "4 REM cycles, no idea");
+}
+
+#[test]
+fn a_swell_at_the_alarm_is_the_morning_not_a_wake_up() {
+    let j = custom(2, r#"{ day = 2, at = "06:30", pursuit = "surf", urgent = true }"#);
+    assert_eq!(j.day(1).tally.wakeups, 0);
+    hours(&j, 1, "sleep", 8.0);
 }
 
 #[test]
@@ -204,6 +244,16 @@ fn a_party_next_door_wakes_you_up() {
 }
 
 #[test]
+fn an_event_that_ends_before_it_starts_runs_past_midnight() {
+    // 23:00 until 01:00 is two hours, into the next day.
+    let j = custom(1, r#"{ day = 1, at = "23:00", until = "01:00", pursuit = "people", urgent = true }"#);
+    assert_eq!(j.day(1).tally.wakeups, 1);
+    hours(&j, 1, "people", 2.0 + 2.0); // family dinner, then the party
+    doing(&j, 2, 0.5, "people");
+    doing(&j, 2, 1.5, "sleep");
+}
+
+#[test]
 fn a_special_event_runs_past_the_evening_window() {
     let j = scenario("special-event");
     doing(&j, 1, 21.5, "people");
@@ -221,6 +271,49 @@ fn late_night_coding_costs_tomorrows_idea() {
     hours(&j, 1, "sleep", 4.5);
     assert!(!j.day(1).tally.signal);
     hours(&j, 2, "geek", 0.0);
+}
+
+#[test]
+fn up_late_until_noon_is_not_a_late_night() {
+    // Before 12:00 means after midnight; 12:00 itself is today's noon, long gone by dinner.
+    let j = custom(1, r#"{ day = 1, up_late = "12:00", doing = "geek" }"#);
+    hours(&j, 1, "geek", 0.0);
+    hours(&j, 1, "sleep", 8.0);
+}
+
+#[test]
+fn up_late_into_the_morning_skips_the_night_not_the_next_day() {
+    // Up until the alarm, or past it: no sleep, and the next day picks up from there. (This
+    // used to wait forever for an alarm that had already rung.)
+    let j = custom(2, r#"{ day = 1, up_late = "06:30", doing = "geek" }"#);
+    hours(&j, 1, "geek", 8.0);
+    hours(&j, 1, "sleep", 0.0);
+    doing(&j, 2, 6.75, "eat");
+    let j = custom(2, r#"{ day = 1, up_late = "10:00", doing = "geek" }"#);
+    hours(&j, 1, "geek", 11.5);
+    hours(&j, 1, "sleep", 0.0);
+    doing(&j, 2, 10.25, "eat"); // a late breakfast
+    hours(&j, 2, "work", 5.5); // 10:30 to 17:00, less lunch
+    hours(&j, 2, "sleep", 8.0);
+}
+
+#[test]
+fn an_idea_waits_for_a_free_evening_and_a_second_one_does_not_pile_up() {
+    // Day 2's deadline leaves no evening for night 1's idea. Night 2 has another, but an idea
+    // you haven't acted on yet is still the one idea: day 3 geeks one session, not two.
+    let j = custom(3, r#"{ day = 2, work_until = "21:00" }"#);
+    assert!(j.day(1).tally.signal && j.day(2).tally.signal);
+    hours(&j, 2, "geek", 0.0);
+    hours(&j, 3, "geek", 2.0);
+    hours(&j, 3, "people", 1.0);
+}
+
+#[test]
+fn work_that_ends_at_lunchtime_skips_lunch() {
+    let j = custom(1, r#"{ day = 1, work_until = "12:00" }"#);
+    hours(&j, 1, "work", 3.0);
+    assert!(!j.said("lunch"), "{:?}", j.moments);
+    doing(&j, 1, 12.5, "living");
 }
 
 #[test]
