@@ -213,6 +213,15 @@ fn morning_coffee_is_free() {
 }
 
 #[test]
+fn coffee_due_at_the_table_waits_until_after_the_meal() {
+    // Work stops for lunch at 12:00; a cup due then is served when work resumes at 13:00.
+    let j = custom(1, r#"{ day = 1, at = "12:00", coffee = 1 }"#);
+    let served: Vec<f64> = j.moments.iter().filter(|m| m.note.starts_with("☕")).map(|m| m.at).collect();
+    assert_eq!(served, [13.0]);
+    assert_eq!(j.day(1).tally.coffee, 1);
+}
+
+#[test]
 fn a_3pm_coffee_wears_off_by_bedtime() {
     let j = scenario("coffee");
     hours(&j, 2, "wired", 0.0);

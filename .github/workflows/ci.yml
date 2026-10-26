@@ -180,7 +180,7 @@ jobs:
       - name: if the run itself died, which mutant was it on
         if: failure()
         run: |
-          last=$(ls -t mutants.out/log 2>/dev/null | head -1)
+          last=$(find mutants.out/log -type f -printf '%T@ %f\n' 2>/dev/null | sort -n | tail -1 | cut -d' ' -f2)
           echo "::error title=mutants: last log::${last:-none}"
       - if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
