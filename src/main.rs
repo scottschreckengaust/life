@@ -363,3 +363,19 @@ fn wall(secs: f64) -> String {
         _ => format!("{}h {:02}m", s / 3600, s % 3600 / 60),
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::wall;
+
+    #[test]
+    fn wall_time_reads_naturally() {
+        assert_eq!(wall(0.024), "0.0s");
+        assert_eq!(wall(9.94), "9.9s");
+        assert_eq!(wall(42.4), "42s");
+        assert_eq!(wall(168.0), "2m 48s");
+        assert_eq!(wall(3599.4), "59m 59s");
+        assert_eq!(wall(4320.0), "1h 12m");
+        assert_eq!(wall(86_400.0), "24h 00m");
+    }
+}

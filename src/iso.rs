@@ -126,9 +126,8 @@ pub fn duration(s: &str) -> Result<f64, String> {
     if !num.is_empty() {
         return Err(bad("a number at the end needs a unit"));
     }
-    if !any {
-        return Err(bad("it has no components"));
-    }
+    // `any` is true here: a non-empty `rest` that isn't "T" either hit a unit or returned above.
+    debug_assert!(any);
     if in_time && last_order < 3 {
         return Err(bad("T needs hours, minutes or seconds after it"));
     }
@@ -286,5 +285,6 @@ mod tests {
         assert!(window("09:00/PT0S").unwrap_err().contains("positive duration"));
         assert!(window("9:00/17:00").unwrap_err().contains("time of day"));
         assert!(window("09:00/8h").unwrap_err().contains("time of day"));
+        assert!(window("18:00").unwrap_err().contains("like 18:00/20:00 or 09:00/PT8H"));
     }
 }

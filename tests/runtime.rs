@@ -152,3 +152,23 @@ fn the_nightly_reset_forgets_old_rings() {
     assert!(why.has(Why::MORNING) && !why.has(Why::URGENT));
     assert!(!alarm.rung());
 }
+
+#[test]
+fn a_real_time_run_with_no_timers_waits_for_another_thread() {
+    // Nothing is scheduled, so the executor parks until a bell rung from another thread wakes it;
+    // the clock then catches up with the wall clock instead of jumping.
+    let bell = Arc::new(rt::Bell::default());
+    let ringer = bell.clone();
+    let t = std::thread::spawn(move || {
+        std::thread::sleep(Duration::from_millis(50));
+        ringer.ring();
+    });
+    let woke_at = rt::block_on(Mode::RealTime(Duration::from_secs(3600)), 1.0, async move {
+        bell.heard().await;
+        rt::now()
+    });
+    t.join().unwrap();
+    // 50 ms of wall clock at real time is 50 ms of simulated time (give it up to a few seconds).
+    assert!(woke_at >= 1.0 + 0.04 / 3600.0, "{woke_at}");
+    assert!(woke_at < 1.0 + 5.0 / 3600.0, "{woke_at}");
+}

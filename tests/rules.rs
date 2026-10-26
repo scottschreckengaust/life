@@ -283,3 +283,84 @@ fn pursuits_are_reported_in_priority_order() {
     let src = "[priorities]\nall = [\"zen\"]\n[pursuit.b]\n[pursuit.a]\n[pursuit.zen]\n";
     assert_eq!(names(&Rules::parse(src).unwrap()), ["zen", "a", "b"]);
 }
+
+#[test]
+fn every_wrong_value_says_what_it_should_be() {
+    let p = "[pursuit.a]\n";
+    for (src, says) in [
+        // the file itself
+        ("a = ", "line 1: missing value"),
+        ("[pursuit]\na = 1", "`pursuit.a` must be a table"),
+        // a pursuit
+        (&format!("{p}glyph = \"ab\""), "pursuit.a.glyph: `ab` must be one character"),
+        (&format!("{p}when = [1]"), "pursuit.a.when: expected strings like"),
+        (&format!("{p}when = 1"), "pursuit.a.when: expected a string or array, found an integer"),
+        (&format!("{p}when = \"someday 18:00/20:00\""), "`someday` is not a day"),
+        (&format!("{p}protected = 1"), "pursuit.a.protected should be true or false, found an integer"),
+        (&format!("{p}preempts = [1]"), "pursuit.a.preempts should list names, found an integer"),
+        (&format!("{p}preempts = 1"), "pursuit.a.preempts should be a list of names, found an integer"),
+        (&format!("{p}preempts = \"nobody\""), "no pursuit named `nobody`"),
+        // priorities
+        (&format!("{p}[priorities]\nall = [\"a\", \"a\"]"), "`a` is listed twice"),
+        (&format!("{p}[priorities]\nall = [1]"), "priorities.all should list names, found an integer"),
+        // tables that aren't
+        (&format!("work = 1\n{p}"), "work should be a table, found an integer"),
+        // work days
+        (&format!("{p}[work]\ndays = 1"), "work.days: expected day names like \"mon-fri\""),
+        (&format!("{p}[work]\ndays = [1]"), "work.days: expected day names"),
+        (&format!("{p}[work]\ndays = \"workdays\""), "work.days: name the days, like \"mon-fri\""),
+        (
+            &format!("{p}[work]\ndays = \"mon-xyz\""),
+            "work.days: `mon-xyz` is not a day range like \"mon-fri\"",
+        ),
+        // sleep
+        (&format!("{p}[sleep]\nrem_cycle = \"PT0S\""), "sleep.rem_cycle must be longer than 0"),
+        // scenarios
+        (&format!("{p}[scenario.s]\ndays = 0"), "scenario.s.days must be 1 to 366"),
+        (
+            &format!("{p}[scenario.s]\ndays = \"two\""),
+            "scenario.s.days should be a whole number, found a string",
+        ),
+        (&format!("{p}[scenario.s]\nevents = 1"), "scenario.s.events must be an array"),
+        (
+            &format!("{p}[scenario.s]\nevents = [1]"),
+            "scenario.s.events[0] must be a table like { day = 1, ... }",
+        ),
+        (
+            &format!("{p}[scenario.s]\nevents = [{{ day = 0, coffee = 1 }}]"),
+            "scenario.s.events[0].day: 0 is outside this 1-day scenario",
+        ),
+        (
+            &format!("{p}[scenario.s]\nevents = [{{ coffee = 1 }}]"),
+            "scenario.s.events[0]: every event needs a `day`",
+        ),
+    ] {
+        rejects(src, says);
+    }
+}
+
+#[test]
+fn day_lists_and_single_names_are_accepted() {
+    let rules = Rules::parse(
+        "[pursuit.a]\npreempts = \"b\"\n[pursuit.b]\n[priorities]\nall = \"b\"\n[work]\ndays = [\"mon\", \"wed\", \"fri\"]\n",
+    )
+    .unwrap();
+    // A single name works for priorities too, and ranks `b` first.
+    assert_eq!(rules.pursuits.iter().map(|p| p.name.as_str()).collect::<Vec<_>>(), ["b", "a"]);
+    assert_eq!(rules.pursuit("a"), Some(1));
+    assert_eq!(rules.pursuit("nobody"), None);
+    assert_eq!(
+        (0..7).map(|d| rules.works(d)).collect::<Vec<_>>(),
+        [true, false, true, false, true, false, false]
+    );
+    assert!(Rules::preset_source("scott").unwrap().contains("[pursuit.geek]"));
+    assert!(Rules::preset_source("nobody").is_none());
+}
+
+#[test]
+fn toml_errors_become_rule_errors() {
+    let e = Rules::parse("a = ").unwrap_err();
+    assert_eq!(e.to_string(), "line 1: missing value");
+    let boxed: Box<dyn std::error::Error> = Box::new(e);
+    assert!(boxed.to_string().starts_with("line 1"));
+}

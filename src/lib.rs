@@ -533,14 +533,14 @@ impl<'r> Life<'r> {
                 return;
             };
             let at = self.opps.borrow()[q].at;
-            let interrupted = select! {
+            // The interrupter is due before this ends (q.at < end), so it wins the race and
+            // `spend` is dropped mid-.await; its Drop guard keeps the hours. Polled first, it also
+            // wins a tie on the same millisecond.
+            select! {
                 biased;
-                _ = self.spend(Activity::Pursuit(p), end) => false,
-                _ = rt::sleep_until(at) => true,
+                _ = rt::sleep_until(at) => {},
+                _ = self.spend(Activity::Pursuit(p), end) => {},
             };
-            if !interrupted {
-                return;
-            }
             let them = &self.rules.pursuits[self.opps.borrow()[q].pursuit].name;
             self.log(format!(
                 "⚡ {them} preempts {}: dropped its future mid-.await (the Drop guard kept the hours)",
