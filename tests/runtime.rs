@@ -199,8 +199,9 @@ fn a_timer_wakes_its_task_once_when_it_is_due() {
 #[test]
 fn real_time_keeps_running_while_a_task_is_busy() {
     // A window from 1.0 on the wall clock, one simulated hour per second. The task works
-    // (spins) for 0.3 s at the start, then sleeps 0.2 h: by then the wall clock is already
-    // past it, so the run ends after ~0.3 s, not 0.3 + 0.2. The busy time counts.
+    // (spins) for 0.3 s at the start, then sleeps 0.5 h. The busy time counts, so the clock
+    // is already 0.3 h along and the run ends after ~0.5 s, not 0.3 + 0.5. The gap between the
+    // two (0.5 vs 0.8 s) leaves a slow CI runner plenty of room.
     let started = Instant::now();
     rt::block_on_live_from(Mode::RealTime(Duration::from_secs(1)), 0.0, 1.0, async {
         rt::sleep(1.0).await;
@@ -208,10 +209,10 @@ fn real_time_keeps_running_while_a_task_is_busy() {
         while busy.elapsed() < Duration::from_millis(300) {
             spin_loop();
         }
-        rt::sleep(0.2).await;
+        rt::sleep(0.5).await;
     });
     let took = started.elapsed();
-    assert!(took >= Duration::from_millis(300) && took < Duration::from_millis(450), "{took:?}");
+    assert!(took >= Duration::from_millis(450) && took < Duration::from_millis(700), "{took:?}");
 }
 
 /// This thread's CPU time so far in clock ticks, and how many times it has gone to sleep (Linux).
