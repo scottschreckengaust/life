@@ -52,6 +52,8 @@ jobs:
       - run: cargo llvm-cov --locked --all-targets --lcov --output-path lcov.info
       - name: 100% of lines
         run: python3 .github/coverage/check.py lcov.info
+        env:
+          COVERAGE_PROBE: src/toml.rs:236-262
 
   msrv:
     runs-on: ubuntu-latest
