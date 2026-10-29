@@ -104,12 +104,18 @@ jobs:
         run: |
           base=$(git describe --tags --abbrev=0 --match 'v[0-9]*')
           echo "::notice::baseline $base"
-          cargo semver-checks --baseline-rev "$base" && exit 0
-          if [[ "$TITLE" =~ ^[a-z]+(\(.*\))?!: ]]; then
+          cargo semver-checks --baseline-rev "$base" 2>&1 | tee semver.log && exit 0
+          # It exits 1 for a break and for its own errors; only a reported break may be waved
+          # through by the title.
+          if ! grep -q '^--- failure ' semver.log; then
+            echo "::error::cargo semver-checks failed without reporting a break (see above)"
+            exit 1
+          fi
+          if [[ "$TITLE" =~ ^[a-z]+(\([^\)]*\))?!: ]]; then
             echo "::notice::breaking change, and the title says so"
             exit 0
           fi
-          echo "::error::this breaks the public API since $base (see above). Fix it, or mark the title feat!:/fix!: if it's meant."
+          echo "::error::this breaks the public API since $base (see above). Fix it, or mark the title feat!:/fix!: and push again (CI doesn't re-run on a title edit)."
           exit 1
 
   msrv:

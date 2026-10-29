@@ -35,7 +35,7 @@ jobs:
         run: |
           type=$(sed -nE 's/^([a-z]+)(\(.*\))?!?:.*/\1/p' <<<"$TITLE")
           case "$type" in test|ci|chore|build) ;; *) exit 0 ;; esac
-          src=$(gh api --paginate "repos/$REPO/pulls/$PR/files" --jq '.[].filename | select(startswith("src/"))')
+          src=$(gh api --paginate "repos/$REPO/pulls/$PR/files" --jq '.[] | .filename, (.previous_filename // empty) | select(startswith("src/"))')
           [[ -z "$src" ]] && exit 0
           echo "::error::'$type:' never releases, but this PR changes the crate's code:"
           echo "$src"
