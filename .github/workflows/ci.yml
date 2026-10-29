@@ -81,6 +81,43 @@ jobs:
       - name: 100% of lines
         run: python3 .github/coverage/check.py lcov.info
 
+  # The public API against the last release. An unmarked break fails here, on the PR,
+  # instead of surfacing as a surprise major bump on the release PR (#30 quietly made
+  # Life !Send). A deliberate break is fine: mark the title feat!: / fix!:.
+  semver:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # master
+        with:
+          toolchain: stable
+      - uses: taiki-e/install-action@a4d3f3f761dcd95cce1b72cb61cb6d1963438177 # v2.87.30
+        with:
+          tool: cargo-semver-checks@0.51.0
+      - name: cargo semver-checks against the last release
+        env:
+          TITLE: ${{ github.event.pull_request.title }}
+        run: |
+          base=$(git describe --tags --abbrev=0 --match 'v[0-9]*')
+          echo "::notice::baseline $base"
+          cargo semver-checks --baseline-rev "$base" 2>&1 | tee semver.log && exit 0
+          # It exits 1 for a break and for its own errors; only a reported break may be waved
+          # through by the title.
+          if ! grep -q '^--- failure ' semver.log; then
+            echo "::error::cargo semver-checks failed without reporting a break (see above)"
+            exit 1
+          fi
+          if [[ "$TITLE" =~ ^[a-z]+(\([^\)]*\))?!: ]]; then
+            echo "::notice::breaking change, and the title says so"
+            exit 0
+          fi
+          echo "::error::this breaks the public API since $base (see above). Fix it, or mark the title feat!:/fix!: and push again (CI doesn't re-run on a title edit)."
+          exit 1
+
   msrv:
     runs-on: ubuntu-latest
     steps:
