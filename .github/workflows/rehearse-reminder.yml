@@ -17,6 +17,12 @@ on:
 
 permissions: {}
 
+# bash -eo pipefail, so a failure inside a pipeline fails the step (GitHub's default shell
+# has no pipefail). Enforced by .github/ci/check-workflows.sh.
+defaults:
+  run:
+    shell: bash
+
 jobs:
   remind:
     # One run per PR at a time, so a quick opened + synchronize can't post twice.

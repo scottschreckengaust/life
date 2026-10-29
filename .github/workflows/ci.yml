@@ -9,6 +9,12 @@ on:
 permissions:
   contents: read
 
+# bash -eo pipefail, so a failure inside a pipeline fails the step (GitHub's default shell
+# has no pipefail). Enforced by .github/ci/check-workflows.sh.
+defaults:
+  run:
+    shell: bash
+
 jobs:
   test:
     runs-on: ubuntu-latest
@@ -28,6 +34,7 @@ jobs:
         run: |
           bash .github/release/test-version-is-new.sh
           bash .github/release/test-plan.sh
+          bash .github/ci/check-workflows.sh
       - name: --format json parses as JSON
         run: cargo run -q --release -- chaos -i -f json | jq -e '(.days | length) == 7 and (.activities | length) == 9'
       - run: cargo package --locked
@@ -182,7 +189,7 @@ jobs:
       - name: if the run itself died, which mutant was it on
         if: failure()
         run: |
-          last=$(find mutants.out/log -type f -printf '%T@ %f\n' 2>/dev/null | sort -n | tail -1 | cut -d' ' -f2)
+          last=$(find mutants.out/log -type f -printf '%T@ %f\n' 2>/dev/null | sort -n | tail -1 | cut -d' ' -f2 || true)
           echo "::error title=mutants: last log::${last:-none}"
       - if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
