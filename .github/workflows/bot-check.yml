@@ -1,0 +1,62 @@
+name: bot-check
+
+# Run by hand to prove an App, its key and its environment are wired up with exactly the
+# permissions they should have. Changes nothing: it only mints tokens (revoked when the job
+# ends) and reads this repository.
+#
+# - The token for the App's job must mint, and must see this repository.
+# - A token with a permission the App must NOT have must fail to mint. If it mints, the App
+#   was given too much and this fails.
+# - Started from any branch but main, GitHub refuses the job: that is the environment's
+#   branch rule working.
+
+on:
+  workflow_dispatch:
+
+permissions: {}
+
+# bash -eo pipefail, so a failure inside a pipeline fails the step (GitHub's default shell
+# has no pipefail). Enforced by .github/ci/check-workflows.sh.
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  release-bot:
+    if: github.repository_owner == 'scottschreckengaust'
+    runs-on: ubuntu-latest
+    environment: bot
+    permissions: {}
+    steps:
+      - id: token
+        name: "release-bot token: contents and pull requests (its job)"
+        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
+        with:
+          client-id: ${{ vars.BOT_CLIENT_ID }}
+          private-key: ${{ secrets.BOT_PRIVATE_KEY }}
+          permission-contents: write
+          permission-pull-requests: write
+      - name: the token can see this repository
+        env:
+          GH_TOKEN: ${{ steps.token.outputs.token }}
+        run: |
+          name=$(gh api "repos/$GITHUB_REPOSITORY" -q .full_name)
+          echo "::notice::release-bot token works for $name (contents, pull requests: write)"
+      - id: too-much
+        name: "release-bot token with workflows: write (must be refused)"
+        continue-on-error: true
+        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
+        with:
+          client-id: ${{ vars.BOT_CLIENT_ID }}
+          private-key: ${{ secrets.BOT_PRIVATE_KEY }}
+          permission-workflows: write
+      - name: the App can't touch workflows
+        env:
+          OUTCOME: ${{ steps.too-much.outcome }}
+        run: |
+          if [[ "$OUTCOME" == success ]]; then
+            echo "::error::the release-bot App has Workflows permission; remove it (Settings > Developer settings > GitHub Apps)"
+            exit 1
+          fi
+          echo "::notice::release-bot App can't write workflows, as intended"
+          echo "### release-bot: ok, from $GITHUB_REF in environment bot" >>"$GITHUB_STEP_SUMMARY"
