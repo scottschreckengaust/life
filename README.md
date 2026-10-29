@@ -413,9 +413,21 @@ PR and its merge), the release-tagger App (`v*` tags) and `github-actions[bot]` 
    `TAGGER_PRIVATE_KEY`. The workflows mint a one-hour token from it only to create the tag. Check the wiring any time: run *release-cut* from `main` with **check_tagger** ticked.
 5. **Lock what's released:**
    - *Immutable releases* (Settings → General → Releases): published assets and tags can't change.
-   - Tag ruleset **release tag creation**: `v*`, *Restrict creations*, bypass: the release-tagger App.
-   - Tag ruleset **release tags**: `v*`, *Restrict updates* and *Restrict deletions*, bypass: Repository admin
-     (so an admin can remove a stray tag). Rehearsal tags (`rehearsal/…`) are outside `v*`.
+   - Tag ruleset **only-github-actions-bot-tags**: `v*`, *Restrict creations*, bypass: the release-tagger App
+     only.
+   - Tag ruleset **release-tags**: `v*`, *Restrict updates*, *Restrict deletions* and *Block force pushes*, no
+     bypass. Rehearsal tags (`rehearsal/…`) are outside `v*`.
+6. **Protect `main`**, with two branch rulesets on the default branch. Bypass is per ruleset, so the bots can skip
+   review without skipping the checks:
+   - **main: green and current**, *no bypass for anyone*: *Restrict deletions*, *Require linear history*, *Block
+     force pushes*, and *Require status checks to pass* with **Require branches to be up to date** (`test`,
+     `coverage`, `msrv`, `zizmor`, `actionlint`, `semver`, `mutants`, `conventional`, `version-is-new`; a job
+     its `if:` skips counts as passing). Nothing merges unless it passed on top of the latest `main`, so no
+     release PR can merge stale and nothing can land between release-cut's checks and its merge.
+   - **main: reviewed**: *Require a pull request* with 1 approval, *Code Owners* review, stale approvals
+     dismissed, the last push approved by someone else, conversations resolved, squash only. Bypass, *for pull
+     requests only*: the maintainer and the release-bot App (its release PR changes `Cargo.toml`, which
+     CODEOWNERS covers).
 
 ## For a GitHub profile
 
