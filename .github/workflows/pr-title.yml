@@ -11,6 +11,12 @@ on:
 permissions:
   pull-requests: read
 
+# bash -eo pipefail, so a failure inside a pipeline fails the step (GitHub's default shell
+# has no pipefail). Enforced by .github/ci/check-workflows.sh.
+defaults:
+  run:
+    shell: bash
+
 jobs:
   conventional:
     runs-on: ubuntu-latest

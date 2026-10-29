@@ -19,6 +19,12 @@ on:
         description: times faster than real life (3600 = an hour per second, 0 = instant)
         default: "0"
 
+# bash -eo pipefail, so a failure inside a pipeline fails the step (GitHub's default shell
+# has no pipefail). Enforced by .github/ci/check-workflows.sh.
+defaults:
+  run:
+    shell: bash
+
 jobs:
   live:
     runs-on: ubuntu-latest
