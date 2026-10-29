@@ -16,9 +16,8 @@ name: release
 #   verify   crates.io's index checksum and served .crate match the attested bytes,
 #            provenance verifies on the downloaded file, and `cargo install` from
 #            crates.io runs.
-# It starts one of two ways: a human merges the release PR (a push to main), or release-cut
-# merges it as github-actions[bot], tags the merge commit, and dispatches this workflow on
-# that tag (pushes made with GITHUB_TOKEN don't trigger workflows; dispatches do).
+# It starts when the release PR merges (a push to main), whether a person or release-cut (as
+# the release-bot App) merged it. A run dispatched on a v* tag works too.
 #
 #   release  Flip the draft to published, then start release-plz so merges that landed
 #            during this release get their release PR.

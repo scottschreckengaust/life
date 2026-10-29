@@ -4,9 +4,9 @@ name: release-plz
 # since the last release. Merging that PR is what cuts a release (release.yml does the rest);
 # release-cut.yml merges it for you after 6 quiet hours.
 #
-# Runs as github-actions[bot] with the built-in GITHUB_TOKEN. PRs made with that token don't
-# trigger CI by themselves, so this starts CI on the release PR explicitly.
-# Needs: Settings > Actions > General > "Allow GitHub Actions to create and approve pull requests".
+# Runs as the release-bot App (key in the `bot` environment, which only deploys from main).
+# A PR the App opens or updates starts CI like anyone's, so its checks count as a ruleset's
+# required status checks (CI dispatched by GITHUB_TOKEN doesn't).
 
 on:
   push:
@@ -29,11 +29,18 @@ jobs:
   release-pr:
     if: github.repository_owner == 'scottschreckengaust'
     runs-on: ubuntu-latest
+    environment: bot
     permissions:
-      contents: write # commit the version bump to the release branch
-      pull-requests: write # open and update the release PR
-      actions: write # start CI on it
+      contents: read # checkout; the App's token does the writing
     steps:
+      - id: bot
+        name: release-bot token (commits the bump, opens and updates the release PR)
+        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
+        with:
+          client-id: ${{ vars.BOT_CLIENT_ID }}
+          private-key: ${{ secrets.BOT_PRIVATE_KEY }}
+          permission-contents: write
+          permission-pull-requests: write
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
@@ -47,10 +54,4 @@ jobs:
         with:
           command: release-pr
         env:
-          GITHUB_TOKEN: ${{ github.token }}
-      - name: start CI on the release PR
-        if: steps.release-plz.outputs.pr != '' && steps.release-plz.outputs.pr != '{}'
-        env:
-          GH_TOKEN: ${{ github.token }}
-          BRANCH: ${{ fromJSON(steps.release-plz.outputs.pr).head_branch }}
-        run: gh workflow run ci.yml -R "$GITHUB_REPOSITORY" --ref "$BRANCH"
+          GITHUB_TOKEN: ${{ steps.bot.outputs.token }}
