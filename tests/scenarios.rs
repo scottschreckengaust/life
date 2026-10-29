@@ -386,23 +386,26 @@ fn real_time_mode_matches_virtual_time_roughly() {
 
 #[test]
 fn the_diary_echoes_to_any_writer_and_a_failing_one_just_stops_it() {
-    use std::{cell::RefCell, io, rc::Rc};
+    use std::{
+        io,
+        sync::{Arc, Mutex},
+    };
     /// Accepts `left` lines, then fails every write, like a reader that went away.
     struct GoesAway {
-        got: Rc<RefCell<String>>,
+        got: Arc<Mutex<String>>,
         left: usize,
-        tries: Rc<RefCell<usize>>,
+        tries: Arc<Mutex<usize>>,
     }
     impl io::Write for GoesAway {
         fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
-            *self.tries.borrow_mut() += 1;
+            *self.tries.lock().unwrap() += 1;
             if self.left == 0 {
                 return Err(io::ErrorKind::BrokenPipe.into());
             }
             if buf.ends_with(b"\n") {
                 self.left -= 1;
             }
-            self.got.borrow_mut().push_str(std::str::from_utf8(buf).unwrap());
+            self.got.lock().unwrap().push_str(std::str::from_utf8(buf).unwrap());
             Ok(buf.len())
         }
         fn flush(&mut self) -> io::Result<()> {
@@ -410,14 +413,14 @@ fn the_diary_echoes_to_any_writer_and_a_failing_one_just_stops_it() {
         }
     }
     let rules = Rules::preset("scott").unwrap();
-    let (got, tries) = (Rc::new(RefCell::new(String::new())), Rc::new(RefCell::new(0)));
+    let (got, tries) = (Arc::new(Mutex::new(String::new())), Arc::new(Mutex::new(0)));
     let out = GoesAway { got: got.clone(), left: 2, tries: tries.clone() };
     let j = Life::new(&rules, rules.scenario("happy-path").unwrap()).echo_to(out).run(Mode::Virtual);
     assert_eq!(
-        got.borrow().lines().collect::<Vec<_>>(),
+        got.lock().unwrap().lines().collect::<Vec<_>>(),
         ["d1 06:30  ⏰ rise and shine", "d1 06:30  🍳 breakfast"]
     );
-    let tries_after = *tries.borrow();
+    let tries_after = *tries.lock().unwrap();
     assert!(j.moments.len() > 10, "the journal keeps everything");
     // After the failure the echo is gone: no more write attempts for the rest of the run.
     assert!(tries_after < 10, "{tries_after} write attempts");
@@ -426,4 +429,11 @@ fn the_diary_echoes_to_any_writer_and_a_failing_one_just_stops_it() {
     assert!(format!("{quiet:?}").contains("Echo(off)"));
     let loud = Life::new(&rules, rules.scenario("happy-path").unwrap()).echo(true);
     assert!(format!("{loud:?}").contains("Echo(on)"));
+}
+
+#[test]
+fn life_stays_send_and_unwind_safe() {
+    // cargo-semver-checks treats losing either as a breaking change (0.2.1 had both).
+    fn ok<T: Send + std::panic::UnwindSafe>() {}
+    ok::<Life>();
 }

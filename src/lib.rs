@@ -129,7 +129,9 @@ pub struct Life<'r> {
 }
 
 /// The diary's live output.
-struct Echo(RefCell<Option<Box<dyn std::io::Write>>>);
+// Send, so Life stays Send. AssertUnwindSafe: a writer left mid-line by a panic only loses
+// echo output, and keeps Life UnwindSafe as it was before echo_to.
+struct Echo(RefCell<Option<std::panic::AssertUnwindSafe<Box<dyn std::io::Write + Send>>>>);
 
 impl std::fmt::Debug for Echo {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -283,8 +285,8 @@ impl<'r> Life<'r> {
 
     /// Write the diary to `out` as it happens, one line per entry. If a write fails (a closed
     /// pipe, a full disk), the echo stops; the journal still has everything.
-    pub fn echo_to(self, out: impl std::io::Write + 'static) -> Self {
-        *self.echo.0.borrow_mut() = Some(Box::new(out));
+    pub fn echo_to(self, out: impl std::io::Write + Send + 'static) -> Self {
+        *self.echo.0.borrow_mut() = Some(std::panic::AssertUnwindSafe(Box::new(out)));
         self
     }
 
