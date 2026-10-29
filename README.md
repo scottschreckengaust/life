@@ -92,6 +92,9 @@ Every rule maps to a piece of the motto. This is the heart of
 [`presets/scott.life.toml`](presets/scott.life.toml):
 
 ```toml
+name  = "scott"
+motto = "If not geeking out: try being with people, catch surfing: finally living, eating, sleeping."
+
 [priorities]                       # select! { biased; ... }: first ready wins, ties go left
 all = ["geek", "people", "surf"]   # or: workday = [...] and weekend = [...]
 
@@ -118,6 +121,7 @@ wired  = "PT6H"
 
 | rule | what it means |
 |---|---|
+| `name`, `motto` | Whose life, and the line it lives by. The motto is optional; when set, it heads every run and is the `motto` field in JSON. |
 | `priorities` | The `select!` order. Per kind of day: `workday`, `weekend`, or `all`. |
 | `when` | Recurring windows: `"18:00/20:00"`, `"workdays 18:00/20:00"`, `"sat,sun 07:00/08:30"`, `"mon-fri ..."`. |
 | `on` | A signal that starts the pursuit. Sleep produces one (`sleep.signal`); scenarios can send them. |
@@ -126,6 +130,20 @@ wired  = "PT6H"
 | `protected` | Nothing interrupts it, whatever `preempts` says. Distinct from priority: it can rank low and still be off-limits. |
 | `sleep.woken_by` | Whose urgent events may wake you. A deep sleeper sets `[]`. |
 | `[work]`, `[meals]`, `[caffeine]` | The fixed parts of a day. Optional: a life without `[work]` has no job. |
+
+A motto can be anything, prose or code. The other presets:
+
+```toml
+motto = "Kids first, music when it comes, miles on Saturday."      # parent
+motto = "loop { select! { biased; _ = users() => {}, _ = jobs() => {}, _ = research() => {} } join!(reflect(), persist()); compact().await; }"   # agent
+```
+
+and a run opens with it:
+
+```text
+“If not geeking out: try being with people, catch surfing: finally living, eating, sleeping.”
+🌍 scott / happy-path: wake, eat, work, lunch, family, eat, sleep. Repeat. (3 days, instant)
+```
 
 Unknown keys are errors, not silence: `sesion = "PT2H"` fails with `unknown key pursuit.a.sesion`.
 
