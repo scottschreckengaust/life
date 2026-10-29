@@ -25,7 +25,9 @@ jobs:
       - run: cargo test --locked
       - run: for f in presets/*.toml; do cargo run -q --release -- check "$f"; done
       - name: release scripts' tests
-        run: bash .github/release/test-version-is-new.sh
+        run: |
+          bash .github/release/test-version-is-new.sh
+          bash .github/release/test-plan.sh
       - name: --format json parses as JSON
         run: cargo run -q --release -- chaos -i -f json | jq -e '(.days | length) == 7 and (.activities | length) == 9'
       - run: cargo package --locked
