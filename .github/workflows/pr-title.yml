@@ -24,3 +24,20 @@ jobs:
       - uses: amannn/action-semantic-pull-request@48f256284bd46cdaab1048c3721360e808335d50 # v6.1.1
         env:
           GITHUB_TOKEN: ${{ github.token }}
+      # A crate change under a type that never releases ships nothing: #30 fixed two bugs as
+      # `test:` and they sat unreleased. src/ changes need feat/fix/perf/refactor/docs/style.
+      - name: a src/ change has a type that matches it
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TITLE: ${{ github.event.pull_request.title }}
+          PR: ${{ github.event.pull_request.number }}
+          REPO: ${{ github.repository }}
+        run: |
+          type=$(sed -nE 's/^([a-z]+)(\(.*\))?!?:.*/\1/p' <<<"$TITLE")
+          case "$type" in test|ci|chore|build) ;; *) exit 0 ;; esac
+          src=$(gh api --paginate "repos/$REPO/pulls/$PR/files" --jq '.[].filename | select(startswith("src/"))')
+          [[ -z "$src" ]] && exit 0
+          echo "::error::'$type:' never releases, but this PR changes the crate's code:"
+          echo "$src"
+          echo "Retitle it fix:/feat:/perf:/refactor: (or split the src/ change out) so release-plz sees it."
+          exit 1
