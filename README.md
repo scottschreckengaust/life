@@ -389,24 +389,28 @@ It's assembled from off-the-shelf actions, pinned to commit SHAs:
 [`taiki-e/upload-rust-binary-action`](https://github.com/taiki-e/upload-rust-binary-action) (cross-platform build,
 archive, checksums), [`actions/attest`](https://github.com/actions/attest) (provenance),
 [`rust-lang/crates-io-auth-action`](https://github.com/rust-lang/crates-io-auth-action) (trusted publishing)
-and the `gh` CLI. Everything runs as `github-actions[bot]`.
+and the `gh` CLI. Three identities do the work, each with only what its job needs: the release-bot App (release
+PR and its merge), the release-tagger App (`v*` tags) and `github-actions[bot]` (everything else).
 
 ### One-time setup
 
 1. **crates.io trusted publishing** (done): owner `scottschreckengaust`, repository `life`, workflow
    `release.yml`, environment `release`. Delete any `CARGO_REGISTRY_TOKEN` secret and revoke the token.
-2. **Let the bot open PRs:** Settings → Actions → General → Workflow permissions → tick *Allow GitHub Actions
-   to create and approve pull requests*. Everything except creating the `v*` tag runs as `github-actions[bot]`
-   with the built-in token. Pushes and PRs made with that token don't start workflows by themselves, so
-   release-plz starts CI on its PR, and release-cut tags the merge commit and starts `release.yml` on that tag.
+2. **The release-bot App** opens, updates and (through release-cut) merges the release PR. A GitHub App with no
+   webhook and two permissions, *Contents* and *Pull requests: read and write* (no *Workflows*), installed on
+   this repository only. Its Client ID is the variable `BOT_CLIENT_ID` and a private key the secret
+   `BOT_PRIVATE_KEY`, both in the **`bot` environment**, which deploys only from `main`. Because its pushes and
+   PRs are an App's, not `GITHUB_TOKEN`'s, they start workflows like anyone's: CI runs on the release PR (so its
+   checks count as required status checks), and merging it starts `release.yml`. Check the wiring any time: run
+   [`bot-check`](.github/workflows/bot-check.yml) from `main` (it also proves the App can't get *Workflows*);
+   from any other branch the environment must refuse it.
 3. **The `release` environment** (Settings → Environments → `release`): deployments only from branch `main` and
    tags `v*`. It is the one place both powers live: crates.io only trusts jobs in `release`, and it holds the
    release-tagger App's key. Rehearsals use no environment, so they can't reach either.
 4. **The release-tagger App**, the only identity allowed to create `v*` tags. A GitHub App with no webhook and
    one permission, *Contents: read and write*, installed on this repository only. Its Client ID is the
    `release` environment variable `TAGGER_CLIENT_ID`, and a private key is the environment secret
-   `TAGGER_PRIVATE_KEY`. The workflows mint a one-hour token from it only to create the tag; everything else is
-   `github-actions[bot]`. Check the wiring any time: run *release-cut* from `main` with **check_tagger** ticked.
+   `TAGGER_PRIVATE_KEY`. The workflows mint a one-hour token from it only to create the tag. Check the wiring any time: run *release-cut* from `main` with **check_tagger** ticked.
 5. **Lock what's released:**
    - *Immutable releases* (Settings → General → Releases): published assets and tags can't change.
    - Tag ruleset **release tag creation**: `v*`, *Restrict creations*, bypass: the release-tagger App.
