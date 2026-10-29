@@ -11,15 +11,17 @@ for f in "$dir"/*.yml "$dir"/*.yaml; do
   if ! awk '
     /^defaults:/ { d=1; next }
     d && /^[^ #]/ { d=0 }
+    d && /^  [^ ]/ { r=0 }
     d && /^  run:/ { r=1; next }
     d && r && /^    shell: *bash *(#.*)?$/ { ok=1 }
     END { exit !ok }' "$f"; then
     echo "::error file=$f::set top-level 'defaults: run: shell: bash' so pipelines fail on any failure"
     bad=1
   fi
-  # A step may not opt back out to sh or bash without pipefail.
-  if grep -nE '^ +shell: *(sh|bash +\{0\}|bash -e \{0\})' "$f"; then
-    echo "::error file=$f::a step overrides the shell without pipefail"
+  # A job or step may only restate it: any other shell (sh, pwsh, a custom bash line)
+  # opts out of pipefail.
+  if grep -nE '^ +shell:' "$f" | grep -vE '^[0-9]+: +shell: *bash *(#.*)?$'; then
+    echo "::error file=$f::a job or step sets a shell other than plain 'bash'"
     bad=1
   fi
 done
