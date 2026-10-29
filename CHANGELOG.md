@@ -11,21 +11,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-- Life is Send and UnwindSafe again, as in 0.2.1 ([#41](https://github.com/scottschreckengaust/life/pull/41))
-- ship the up_late hang fix and the TOML error-line fix ([#39](https://github.com/scottschreckengaust/life/pull/39))
+- a rule that keeps you up past your next alarm (`up_late = "06:30"` or later) no longer hangs the run; the alarm rings and the night is skipped ([#30](https://github.com/scottschreckengaust/life/pull/30))
+- life-file errors name the line the problem is on, not the next one (unclosed `[header`, unterminated string, missing `=`, an inline table running off its line) ([#30](https://github.com/scottschreckengaust/life/pull/30))
 
 ### Other
 
 - mutation testing with cargo-mutants, no surviving mutants ([#33](https://github.com/scottschreckengaust/life/pull/33))
 - 100% line coverage, enforced in CI ([#30](https://github.com/scottschreckengaust/life/pull/30))
-- Merge remote-tracking branch 'origin/main' into ci/version-is-new
 - harden against fork PRs (zizmor, CODEOWNERS)
 - refuse to cut a version that already exists anywhere
-
-### Fixed
-
-- a rule that keeps you up past your next alarm (`up_late = "06:30"` or later) no longer hangs the run; the alarm rings and the night is skipped ([#30](https://github.com/scottschreckengaust/life/pull/30))
-- life-file errors name the line the problem is on, not the next one (unclosed `[header`, unterminated string, missing `=`, an inline table running off its line) ([#30](https://github.com/scottschreckengaust/life/pull/30))
 
 ## [0.2.1](https://github.com/scottschreckengaust/life/compare/v0.2.0...v0.2.1) - 2026-10-23
 
