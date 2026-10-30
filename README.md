@@ -314,8 +314,9 @@ its own provenance, and the release workflow proves it is byte-for-byte the file
 Fork PRs are welcome, and they can't reach anything that ships:
 
 - **CI** runs on `pull_request` with a read-only token and no secrets, after a maintainer approves the run.
-- **The two workflows that run with write access** (`pr-title`, and `rehearse-reminder`, which may comment that a
-  change needs a rehearsal) never check out or run the PR's code; they read its title and file list.
+- **No workflow uses `pull_request_target`.** Everything a PR triggers runs on plain `pull_request`, so a fork's
+  run gets a read-only token and no secrets. `rehearse-reminder` comments only on PRs from this repository; on a
+  fork's (or Dependabot's) it leaves the reminder in its run summary instead.
 - **Releases** only run from `main` and `v*` tags, in the `release` environment, which is the only place the
   release-tagger key and crates.io's trust live. Only the release-tagger App can create `v*` tags.
 - **Code owners** ([`.github/CODEOWNERS`](.github/CODEOWNERS)) must review changes to `.github/`, `Cargo.toml`,
@@ -421,7 +422,7 @@ PR and its merge), the release-tagger App (`v*` tags) and `github-actions[bot]` 
 6. **Protect `main`**, with two branch rulesets on the default branch. Bypass is per ruleset, so the bots can skip
    review without skipping the checks:
    - **main: green and current**, *no bypass for anyone*: *Restrict deletions*, *Require linear history*, *Block
-     force pushes*, and *Require status checks to pass* with **Require branches to be up to date** (`test`,
+     force pushes*, *Require signed commits* (squash merges are signed by GitHub), and *Require status checks to pass* with **Require branches to be up to date** (`test`,
      `coverage`, `msrv`, `zizmor`, `actionlint`, `semver`, `mutants`, `conventional`, `version-is-new`; a job
      its `if:` skips counts as passing). Nothing merges unless it passed on top of the latest `main`, so no
      release PR can merge stale and nothing can land between release-cut's checks and its merge.
