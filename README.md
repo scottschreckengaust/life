@@ -5,6 +5,7 @@
 [![docs.rs](https://img.shields.io/docsrs/spin-life)](https://docs.rs/spin-life)
 ![dependencies: 0](https://img.shields.io/badge/dependencies-0-brightgreen)
 ![unsafe: forbidden](https://img.shields.io/badge/unsafe-forbidden-success)
+[![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/scottschreckengaust/life/badge)](https://scorecard.dev/viewer/?uri=github.com/scottschreckengaust/life)
 
 ```rust
 thread::spawn(|| loop { thread::sleep(EARTH_SPIN); ALARM.store(true, Release) });

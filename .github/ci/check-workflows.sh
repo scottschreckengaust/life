@@ -7,6 +7,8 @@ dir=${1:-.github/workflows}
 bad=0
 for f in "$dir"/*.yml "$dir"/*.yaml; do
   [[ -e "$f" ]] || continue
+  # Only run steps have a shell; a workflow of nothing but actions (scorecard) needs none.
+  grep -qE '^ +(- )?run:' "$f" || continue
   # A top-level `defaults:` whose `run:` sets `shell: bash`.
   if ! awk '
     /^defaults:/ { d=1; next }
