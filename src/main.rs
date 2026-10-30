@@ -169,7 +169,7 @@ fn main() {
 fn run(a: &Args) {
     let rules = load(a);
     let scenario = match (a.days, a.target.as_deref()) {
-        (Some(n), _) => Scenario::plain(n.clamp(1, 366)),
+        (Some(n), _) => Scenario::plain(n),
         (None, Some(name)) => rules.scenario(name).cloned().unwrap_or_else(|| {
             eprintln!("no scenario `{name}` in {}'s life. Scenarios:", rules.name);
             rules.scenarios.iter().for_each(|s| eprintln!("  {}", s.name));
@@ -340,12 +340,21 @@ fn parse_args() -> Args {
             "-L" | "--life" => a.life = Some(value(&arg, &mut it)),
             "-p" | "--preset" => a.preset = Some(value(&arg, &mut it)),
             "-d" | "--days" => {
-                a.days = Some(value(&arg, &mut it).parse().unwrap_or_else(|_| fail("--days needs a number")))
+                a.days = Some(match value(&arg, &mut it).parse() {
+                    Ok(n @ 1..=366) => n,
+                    _ => fail("--days needs a whole number from 1 to 366"),
+                })
             }
-            "-x" | "--speed-up" => match value(&arg, &mut it).parse::<f64>() {
-                Ok(x) if x > 0.0 && x.is_finite() => a.speed_up = Some(x),
-                _ => fail("--speed-up needs a positive number (3600 = an hour per second)"),
-            },
+            "-x" | "--speed-up" => {
+                let v = value(&arg, &mut it);
+                match v.parse::<f64>() {
+                    Ok(x) if x > 0.0 && x.is_finite() && 3600.0 / x >= 1e-9 => a.speed_up = Some(x),
+                    Ok(x) if x > 0.0 && x.is_finite() => fail(&format!(
+                        "--speed-up {v} would make an hour take under a nanosecond: use --instant"
+                    )),
+                    _ => fail("--speed-up needs a positive number (3600 = an hour per second)"),
+                }
+            }
             "-s" | "--scale" => fail("--scale is gone: use --speed-up N (--scale S was --speed-up 3600/S)"),
             s if s.starts_with('-') => fail(&format!("unknown option `{s}`")),
             "run" | "list" | "presets" | "init" | "check" if a.cmd.is_none() && a.target.is_none() => {

@@ -88,8 +88,9 @@ fn run_finds_its_scenario_or_says_which_exist() {
         out.starts_with("🌍 bare / plain: 7 ordinary days"),
         "a life without a motto starts with the title: {out}"
     );
-    // --days caps at a year.
-    assert!(succeeds(&["--days", "999", "-i", "-q"]).contains("(366 days, instant)"));
+    // A year is the longest run, as for a scenario's `days`.
+    assert!(succeeds(&["--days", "366", "-i", "-q"]).contains("(366 days, instant)"));
+    fails(&["--days", "999", "-i", "-q"], 2, "--days needs a whole number from 1 to 366");
 }
 
 #[test]
@@ -119,7 +120,18 @@ fn help_and_version() {
 #[test]
 fn bad_arguments_exit_2_with_usage() {
     for (args, says) in [
-        (&["--days", "seven"][..], "--days needs a number"),
+        (&["--days", "seven"][..], "--days needs a whole number from 1 to 366"),
+        // Out of range used to be clamped silently: 0 ran a day, 99999999999 ran 366.
+        (&["--days", "0"], "--days needs a whole number from 1 to 366"),
+        (&["--days", "367"], "--days needs a whole number from 1 to 366"),
+        (&["--days", "99999999999"], "--days needs a whole number from 1 to 366"),
+        // An hour shorter than a nanosecond used to round to zero and hang the run.
+        (
+            &["--speed-up", "1e15"],
+            "--speed-up 1e15 would make an hour take under a nanosecond: use --instant",
+        ),
+        (&["--speed-up", "inf"], "--speed-up needs a positive number"),
+        (&["--speed-up", "0"], "--speed-up needs a positive number"),
         (&["--days"], "--days needs a value"),
         (&["--speed-up", "fast"], "--speed-up needs a positive number"),
         (&["--wat"], "unknown option `--wat`"),

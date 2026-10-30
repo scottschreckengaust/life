@@ -179,6 +179,17 @@ impl Journal {
         }
     }
 
+    /// End the record at `at` (absolute hours): spans are cut there, and anything after it
+    /// goes. A run calls this with its own end, so nothing it records, however long a
+    /// session or opportunity was, reaches past the run.
+    pub(crate) fn end_at(&mut self, at: f64) {
+        for s in &mut self.spans {
+            s.end = s.end.min(at);
+        }
+        self.spans.retain(|s| s.end - s.start > 1e-9);
+        self.moments.retain(|m| m.at <= at);
+    }
+
     /// Totals for day `day` (1-based).
     pub fn day(&self, day: usize) -> DaySummary {
         let all = self.activities();

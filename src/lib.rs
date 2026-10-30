@@ -333,7 +333,9 @@ impl<'r> Life<'r> {
             }
         });
         let windowed = self.from.is_some() || self.until.is_some();
+        let end = self.ends_at();
         let mut journal = self.journal.into_inner();
+        journal.end_at(end);
         if windowed {
             journal.clip(from, until.unwrap_or(f64::INFINITY));
         }

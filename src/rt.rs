@@ -82,7 +82,7 @@ impl Exec {
     /// Where the wall clock says simulated time should be, for real-time runs.
     fn wall(&self, per_hour: Duration) -> u64 {
         let hours = self.started.get().elapsed().as_secs_f64() / per_hour.as_secs_f64();
-        self.origin.get() + (hours * MS_PER_HOUR) as u64
+        self.origin.get().saturating_add((hours * MS_PER_HOUR) as u64)
     }
 
     fn waker(&self, id: usize) -> Waker {
@@ -182,6 +182,12 @@ pub fn block_on<F: Future>(mode: Mode, start: f64, fut: F) -> F::Output {
 /// doesn't wait through everything before it. In [`Mode::Virtual`], `live_from` changes nothing.
 pub fn block_on_live_from<F: Future>(mode: Mode, start: f64, live_from: f64, fut: F) -> F::Output {
     let live_from = ms(live_from).max(ms(start));
+    // An hour that takes no wall-clock time at all (a speed-up so large the per-hour
+    // duration rounds to zero) is virtual time; following the wall clock would divide by zero.
+    let mode = match mode {
+        Mode::RealTime(per_hour) if per_hour.is_zero() => Mode::Virtual,
+        m => m,
+    };
     let exec = Rc::new(Exec {
         mode,
         origin: Cell::new(ms(start)),

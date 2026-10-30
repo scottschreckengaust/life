@@ -331,13 +331,7 @@ impl Rules {
             let note = f.str("note")?.unwrap_or_else(|| format!("▶ {pname}"));
             let on = f.str("on")?;
             let session = dur_or(&mut f, "session", 2.0)?;
-            let lasts = f
-                .str("lasts")?
-                .map(|s| {
-                    let key = format!("{ctx}.lasts");
-                    within_a_day(duration(&s, &key)?, &s, &key)
-                })
-                .transpose()?;
+            let lasts = f.str("lasts")?.map(|s| duration(&s, &format!("{ctx}.lasts"))).transpose()?;
             let protected = f.bool("protected")?.unwrap_or(false);
             preempt_names.push((i, f.strs("preempts")?.unwrap_or_default()));
             let windows = match f.raw("when") {
@@ -414,7 +408,15 @@ impl Rules {
         if rem_cycle <= 0.0 {
             return fail("sleep.rem_cycle must be longer than 0");
         }
-        let signal_after = s.int("signal_after")?.map(|n| n.max(0) as u32);
+        let signal_after = match s.int("signal_after")? {
+            Some(n) => Some(u32::try_from(n).map_err(|_| {
+                RuleError(format!(
+                    "sleep.signal_after must be a whole number from 0 to {}, not {n}",
+                    u32::MAX
+                ))
+            })?),
+            None => None,
+        };
         let signal = s.str("signal")?.unwrap_or_else(|| "idea".into());
         let signal_note = s.str("signal_note")?.unwrap_or_else(|| format!("💡 woke up with: {signal}"));
         let woken_by = s
@@ -695,16 +697,7 @@ fn time_or(f: &mut Fields, k: &str, default: f64) -> Result<f64> {
 
 fn dur_or(f: &mut Fields, k: &str, default: f64) -> Result<f64> {
     let key = f.key(k);
-    f.str(k)?.map_or(Ok(default), |s| within_a_day(duration(&s, &key)?, &s, &key))
-}
-
-/// Everything a life file times (a session, an opportunity, a meal, staying wired, a
-/// window) happens within a day. Longer would also run past the end of the run.
-fn within_a_day(hours: f64, s: &str, ctx: &str) -> Result<f64> {
-    if hours > crate::EARTH_SPIN {
-        return Err(RuleError(format!("{ctx}: `{s}` is longer than a day (at most PT24H)")));
-    }
-    Ok(hours)
+    f.str(k)?.map_or(Ok(default), |s| duration(&s, &key))
 }
 
 /// An ISO 8601 time of day, `"06:30"` or `"06:30:02.5"`, as hours. See [`crate::iso::time`].
@@ -721,7 +714,12 @@ pub fn duration(s: &str, ctx: &str) -> Result<f64> {
 /// past midnight. See [`crate::iso::window`].
 pub fn window(s: &str, ctx: &str) -> Result<(f64, f64)> {
     let (start, end) = crate::iso::window(s).map_err(|e| RuleError(format!("{ctx}: {e}")))?;
-    within_a_day(end - start, s, ctx)?;
+    // These windows recur daily: one longer than a day would overlap its own next day.
+    if end - start > crate::EARTH_SPIN {
+        return Err(RuleError(format!(
+            "{ctx}: `{s}` is longer than a day; a window that repeats daily can be at most PT24H"
+        )));
+    }
     Ok((start, end))
 }
 
