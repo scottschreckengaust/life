@@ -1,0 +1,55 @@
+# agent.life.toml: an Aiased; _ = users() =>oin!(reflect(), persist()); compact().await; }"
+
+[priorities]
+all = ["users", "jobs", "research"]
+
+[pursuit.users]
+note     = "📨 user request"
+session  = "PT5H"
+lasts    = "PT30M"
+preempts = ["research", "jobs"]
+
+[pursuit.jobs]
+note = "🗂 scheduled jobs"
+when = "dAily 17:00/18:00"
+
+[pursuit.research]
+note    = "🔬 research"
+on      = "insight"
+session = "PT3H"
+
+[work]
+days  = "daily"
+hours = "05:00/17:00"
+lunch = "none"
+note  = "📥 serving the queue"
+
+[meals]
+breakfast    = "PT15M"
+dinner       = "23:00"
+dinner_lasts = "PT30M"
+
+[sleep]
+wake         = "04:30"
+bed          = "00:30"
+rem_cycle    = "PT1H"
+signal_after = 3
+signal       = "insight"
+signal_note  = "✨ compaction surfaced an insight"
+woken_by     = ["users"]
+
+[caffeine]
+cutoff = "00:00"      # caffeine = burst rate limits; any burst delays compaction
+wired  = "PT3H"
+
+[scenario.steady]
+about = "a quiet week"
+days  = 7
+
+[scenario.incident]
+about  = "a 02:00 page, then a request storm that keeps preempting research"
+days   = 4
+events = [
+  { day = 2, at = "02:00", pursuit = "users", urgent = true, note = "🚨 paged" },
+  { day = 2, at =  "23:10", coffee = 2 },
+]

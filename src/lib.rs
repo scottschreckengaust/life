@@ -67,7 +67,62 @@ pub fn hhmm(abs: f64) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::hhmm;
+    use super::{hhmm, rt::Mode, Life, Opportunity, Rules};
+
+    const AGENT: &str = include_str!("../presets/agent.life.toml");
+
+    fn windows(life: &Life) -> Vec<f64> {
+        life.opps.borrow().iter().filter(|o| o.scheduled).map(|o| o.at).collect()
+    }
+
+    #[test]
+    fn windows_open_a_day_ahead_and_go_once_spent_or_over() {
+        // agent's only window is jobs, daily 17:00/18:00; `steady` is 7 days.
+        let rules = Rules::parse(AGENT).unwrap();
+        let life = Life::new(&rules, rules.scenarios.iter().find(|s| s.name == "steady").unwrap());
+        assert!(windows(&life).is_empty(), "the day loop opens them, not new()");
+        life.open_windows(2);
+        assert_eq!(windows(&life), [17.0, 41.0]);
+        life.open_windows(2);
+        assert_eq!(windows(&life), [17.0, 41.0], "a day's windows open once");
+        life.open_windows(99);
+        assert_eq!(windows(&life), [17.0, 41.0, 65.0, 89.0, 113.0, 137.0, 161.0], "never past the last day");
+
+        // Day 4's is spent; days 1 and 2 are over at 42:00 (day 2's ends exactly then).
+        life.opps.borrow_mut().iter_mut().find(|o| o.at == 89.0).unwrap().used = true;
+        // An unused urgent event that has expired stays: it can still wake you tonight.
+        let page = Opportunity {
+            pursuit: 0,
+            at: 30.0,
+            ends: None,
+            expires: 31.0,
+            urgent: true,
+            note: None,
+            rested: false,
+            scheduled: false,
+            used: false,
+        };
+        life.opps.borrow_mut().push(page);
+        life.prune(42.0);
+        assert_eq!(windows(&life), [65.0, 113.0, 137.0, 161.0]);
+        assert_eq!(life.opps.borrow().len(), 5, "the expired page is kept");
+    }
+
+    #[test]
+    fn tomorrows_window_can_preempt_tonights_page() {
+        // The 02:00 page on day 2 happens during day 1's night; a 02:30 window on day 2 that
+        // preempts it has to be open by then.
+        let src = AGENT
+            .replace(r#"all = ["users", "jobs", "research"]"#, r#"all = ["oncall", "users", "jobs", "research"]"#)
+            .replace(
+                "[pursuit.jobs]",
+                "[pursuit.oncall]\nnote = \"📟 on call\"\nwhen = \"daily 02:30/03:00\"\npreempts = [\"users\"]\n\n[pursuit.jobs]",
+            );
+        let rules = Rules::parse(&src).unwrap();
+        let incident = rules.scenarios.iter().find(|s| s.name == "incident").unwrap();
+        let journal = Life::new(&rules, incident).run(Mode::Virtual);
+        assert!(journal.said("oncall preempts users"), "{:?}", journal.moments);
+    }
 
     #[test]
     fn hhmm_shows_seconds_only_when_there_are_some() {
@@ -121,7 +176,15 @@ pub struct Life<'r> {
     alarm: Arc<Alarm>,
     journal: RefCell<Journal>,
     today: Cell<usize>,
+    /// Open chances to do something. Each day's `when` windows are added a day ahead and
+    /// dropped once they're used or over, so a long run doesn't search all of them (#81).
     opps: RefCell<Vec<Opportunity>>,
+    /// Days whose windows are in `opps`.
+    windows_through: Cell<usize>,
+    /// `[scenario.*] start`, the weekday of day 1.
+    start: usize,
+    /// `(day, pursuit)` pairs whose windows a scenario skips.
+    skips: Vec<(usize, usize)>,
     coffee: RefCell<Vec<(usize, f64, u32, bool)>>,
     dreamt: Cell<f64>,
     /// Only `[from, until)` is reported (absolute hours); see [`Life::window`].
@@ -155,8 +218,11 @@ impl Drop for Doing<'_, '_> {
     }
 }
 
+/// Day `day`'s hour `hour` in absolute hours, on the clock's millisecond. `now()` is always a
+/// whole millisecond, so a time compared with it has to be one too: unrounded, day 2's 02:13
+/// is a hair past the millisecond its alarm rings on, and the page that rang it was missed.
 fn abs(day: usize, hour: f64) -> f64 {
-    (day - 1) as f64 * EARTH_SPIN + hour
+    iso::round_ms((day - 1) as f64 * EARTH_SPIN + hour)
 }
 
 impl<'r> Life<'r> {
@@ -235,10 +301,35 @@ impl<'r> Life<'r> {
                 Event::Skip { pursuit, .. } => skips.push((day, *pursuit)),
             }
         }
-        for day in 1..=n {
-            let weekday = (scenario.start + day - 1) % 7;
-            for (i, p) in rules.pursuits.iter().enumerate() {
-                if skips.contains(&(day, i)) {
+        let pursuits = rules.pursuits.iter().map(|p| (p.name.clone(), p.glyph)).collect();
+        Life {
+            rules,
+            days: n,
+            plans,
+            echo: Echo(RefCell::new(None)),
+            alarm: Arc::default(),
+            journal: RefCell::new(Journal::new(n, pursuits, rules.sleep.signal.clone())),
+            today: Cell::new(1),
+            opps: RefCell::new(opps),
+            windows_through: Cell::new(0),
+            start: scenario.start,
+            skips,
+            coffee: RefCell::new(coffee),
+            dreamt: Cell::new(0.0),
+            from: scenario.from,
+            until: scenario.until,
+        }
+    }
+
+    /// Add the `when` windows of every day up to `through` (at most the last day) that
+    /// aren't in yet. Nothing searches further ahead than the next morning's alarm, so the
+    /// windows of today and tomorrow are all that's needed.
+    fn open_windows(&self, through: usize) {
+        let mut opps = self.opps.borrow_mut();
+        for day in self.windows_through.get() + 1..=through.min(self.days) {
+            let weekday = (self.start + day - 1) % 7;
+            for (i, p) in self.rules.pursuits.iter().enumerate() {
+                if self.skips.contains(&(day, i)) {
                     continue;
                 }
                 for w in p.windows.iter().filter(|w| w.days[weekday]) {
@@ -256,23 +347,15 @@ impl<'r> Life<'r> {
                     });
                 }
             }
+            self.windows_through.set(day);
         }
+    }
 
-        let pursuits = rules.pursuits.iter().map(|p| (p.name.clone(), p.glyph)).collect();
-        Life {
-            rules,
-            days: n,
-            plans,
-            echo: Echo(RefCell::new(None)),
-            alarm: Arc::default(),
-            journal: RefCell::new(Journal::new(n, pursuits, rules.sleep.signal.clone())),
-            today: Cell::new(1),
-            opps: RefCell::new(opps),
-            coffee: RefCell::new(coffee),
-            dreamt: Cell::new(0.0),
-            from: scenario.from,
-            until: scenario.until,
-        }
+    /// Forget what can't be taken any more: anything used, and windows that are over (only
+    /// urgent events wake you, so a window over by `now` can never be picked). Order is kept,
+    /// so ties still go to the same one. Call it only while no opportunity index is held.
+    fn prune(&self, now: f64) {
+        self.opps.borrow_mut().retain(|o| !o.used && !(o.scheduled && o.expires <= now));
     }
 
     /// Print the diary to stdout as it happens.
@@ -361,6 +444,9 @@ impl<'r> Life<'r> {
         });
         for d in 1..=self.days {
             self.today.set(d);
+            // Between days no opportunity index is held, so the list can shrink here.
+            self.prune(self.now());
+            self.open_windows(d + 1);
             self.morning().await;
             self.work().await;
             self.evening().await;
@@ -657,15 +743,20 @@ impl<'r> Life<'r> {
     }
 
     /// When today's afternoon coffee stops keeping you awake.
+    /// Rounded to the clock's millisecond: `dream` compares it with `now()`, which is always
+    /// a whole millisecond. Unrounded (23:10 + 3h is no exact f64), it sat a hair past the
+    /// millisecond the clock stops on, so the night never got there and never ended.
     fn caffeine(&self) -> f64 {
         let c = &self.rules.caffeine;
         let today = self.today.get();
-        self.coffee
+        let wired = self
+            .coffee
             .borrow()
             .iter()
             .filter(|cup| cup.0 == today && cup.1 >= abs(today, c.cutoff))
             .map(|cup| cup.1 + c.wired + c.per_extra_shot * f64::from(cup.2.saturating_sub(1)))
-            .fold(f64::NEG_INFINITY, f64::max)
+            .fold(f64::NEG_INFINITY, f64::max);
+        iso::round_ms(wired)
     }
 
     fn cycles(hours: f64, cycle: f64) -> u32 {

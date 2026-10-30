@@ -468,3 +468,30 @@ fn nothing_is_recorded_past_the_end_of_a_run() {
         }
     }
 }
+
+// ------------------------------------------- times that aren't whole f64 hours (#82)
+
+#[test]
+fn a_page_at_an_odd_minute_still_wakes_you() {
+    // Day 2's 02:13 is no exact f64 hour. Its alarm rang on the clock's millisecond, but the
+    // page itself was a hair later, so it didn't count yet: back to bed, page missed.
+    let j = custom(2, r#"{ day = 2, at = "02:13", pursuit = "people", urgent = true }"#);
+    assert_eq!(j.day(1).tally.wakeups, 1, "{:?}", j.moments);
+    doing(&j, 2, 2.5, "people");
+}
+
+#[test]
+fn coffee_at_an_odd_minute_wears_off_and_the_night_ends() {
+    // Found by fuzzing (#66): 23:10 + 3h wired is no exact f64 hour either, and the night
+    // never reached it: dream() slept until "now" forever.
+    let agent = spin_life::PRESETS.iter().find(|p| p.0 == "agent").unwrap().2;
+    let src =
+        format!("{agent}\n[scenario.test]\ndays = 3\nevents = [{{ day = 2, at = \"23:10\", coffee = 1 }}]\n");
+    let (tx, rx) = std::sync::mpsc::channel();
+    std::thread::spawn(move || {
+        let rules = Rules::parse(&src).unwrap();
+        tx.send(Life::new(&rules, rules.scenario("test").unwrap()).run(Mode::Virtual)).unwrap();
+    });
+    let j = rx.recv_timeout(std::time::Duration::from_secs(30)).expect("the night never ended");
+    hours(&j, 2, "wired", 1.0 + 40.0 / 60.0); // lights out 00:30, wired until 02:10
+}
