@@ -1,0 +1,30 @@
+name: clamav
+
+# A weekly ClamAV scan of the repository tree (#60). Report-only: findings are annotations
+# and a run summary. The release artifacts are scanned in release.yml's `scan` job.
+
+on:
+  schedule:
+    - cron: "41 6 * * 3"
+  workflow_dispatch:
+  pull_request:
+    paths: [.github/ci/clamscan.sh, .github/workflows/clamav.yml]
+
+permissions: {}
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  tree:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: scan
+        run: .github/ci/clamscan.sh "repository tree" .

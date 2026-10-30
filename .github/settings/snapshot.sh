@@ -1,0 +1,48 @@
+#!/usr/bin/env bash
+# Print the repository's settings that a workflow token can read, as stable, sorted JSON.
+# settings-check.yml compares this against .github/settings/expected.json; to change a
+# setting on purpose, change it in GitHub and update expected.json in the same PR
+# (bash .github/settings/snapshot.sh > .github/settings/expected.json).
+#
+#   GH_TOKEN=... REPO=owner/name snapshot.sh
+set -euo pipefail
+: "${REPO:?}"
+
+# gh api, but a refused read names itself (as an annotation in CI) instead of failing
+# silently somewhere in the middle.
+api() {
+  local out
+  if ! out=$(gh api "$@" 2>&1); then
+    echo "::error title=settings snapshot::can't read $1: $out" >&2
+    exit 1
+  fi
+  printf '%s\n' "$out"
+}
+
+# Merge options (squash only, PR title and description, auto-delete) and rulesets' bypass
+# lists aren't visible to a workflow token: they need Administration read (see the issue
+# on a read-only settings App). Squash-only is still checked, through main: reviewed's
+# allowed_merge_methods.
+repo=$(api "repos/$REPO" --jq '{visibility, allow_forking, has_wiki, has_projects, has_discussions, web_commit_signoff_required}')
+
+rulesets='[]'
+for id in $(api "repos/$REPO/rulesets" --jq '.[].id'); do
+  one=$(api "repos/$REPO/rulesets/$id" --jq '{
+    name, target, enforcement,
+    conditions,
+    rules: ([.rules[] | {type, parameters}] | sort_by(.type))
+  }')
+  rulesets=$(jq --argjson one "$one" '. + [$one]' <<<"$rulesets")
+done
+rulesets=$(jq 'sort_by(.name)' <<<"$rulesets")
+
+# Immutable releases (Settings > General > Releases) applies from when it was turned on, so
+# the latest release shows whether it is on now.
+releases=$(api "repos/$REPO/releases/latest" --jq '{latest_immutable: .immutable}')
+pvr=$(api "repos/$REPO/private-vulnerability-reporting" --jq '{private_vulnerability_reporting: .enabled}')
+# (The CodeQL setup needs an admin token to read; codeql.yml running on every PR shows the
+# advanced setup is in use.)
+
+jq -n --argjson repo "$repo" --argjson rulesets "$rulesets" --argjson releases "$releases" \
+  --argjson pvr "$pvr" \
+  '{repository: $repo, rulesets: $rulesets, releases: $releases, security: $pvr}' --sort-keys

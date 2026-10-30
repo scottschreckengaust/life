@@ -134,10 +134,12 @@ pub fn duration(s: &str) -> Result<f64, String> {
     if rest.contains('W') && rest.contains(['D', 'T']) {
         return Err(bad("weeks don't combine with other components"));
     }
+    // Check after rounding: a total near f64's limit is finite in hours but not in milliseconds.
+    let total = round_ms(total);
     if !total.is_finite() {
         return Err(bad("too large"));
     }
-    Ok(round_ms(total))
+    Ok(total)
 }
 
 /// A point in a run, as absolute hours since midnight at the start of day 1: a time of day
@@ -254,6 +256,9 @@ mod tests {
         assert!(duration("P1H").unwrap_err().contains("hours, minutes and seconds go after T"));
         assert!(duration("PTT1H").unwrap_err().contains("T comes once"));
         assert!(duration(&format!("PT{}H", "9".repeat(400))).unwrap_err().contains("too large"));
+        // Finite in hours, but not in milliseconds: rounding to the millisecond overflowed.
+        assert!(duration(&format!("PT1{}H", "0".repeat(305))).unwrap_err().contains("too large"));
+        assert!(duration(&format!("P1{}W", "0".repeat(302))).unwrap_err().contains("too large"));
         for s in [
             "P",
             "PT",
