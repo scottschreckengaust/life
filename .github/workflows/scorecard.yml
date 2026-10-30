@@ -1,0 +1,41 @@
+name: scorecard
+
+# OpenSSF Scorecard: grades this repo weekly (and on every push to main or ruleset change)
+# against ~18 supply-chain checks, publishes the score for the README badge, and puts its
+# findings in Security > Code scanning, so a regression shows up there without an audit.
+#
+# No `defaults:` and no run steps: Scorecard only publishes results from a workflow that
+# uses nothing but actions (.github/ci/check-workflows.sh exempts files without run steps).
+
+on:
+  push:
+    branches: [main]
+  schedule:
+    - cron: "41 6 * * 1" # Mondays
+  branch_protection_rule:
+  workflow_dispatch:
+
+permissions: {}
+
+jobs:
+  scorecard:
+    if: github.repository_owner == 'scottschreckengaust'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      actions: read
+      security-events: write # upload to code scanning
+      id-token: write # publish the result to the OpenSSF API (for the badge)
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ossf/scorecard-action@fa7117db83c52d787ae5a89f350999701505d78e # v2.5.0
+        with:
+          results_file: scorecard.sarif
+          results_format: sarif
+          publish_results: true
+      - uses: github/codeql-action/upload-sarif@9b3254085494b55a0f7c4c2b3d2d52cc712ce370 # v4.39.1
+        with:
+          sarif_file: scorecard.sarif
+          category: scorecard

@@ -144,6 +144,29 @@ jobs:
           ZIZMOR: "1.31.1"
         run: pipx run "zizmor==$ZIZMOR" --format github .
 
+  # The same audit on main, uploaded to Security > Code scanning, so findings are tracked
+  # over time and not only shown on the PR that introduced them. Exits 0: the gate is the
+  # zizmor job above; this only records.
+  zizmor-sarif:
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: zizmor (SARIF)
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ZIZMOR: "1.31.1"
+        run: pipx run "zizmor==$ZIZMOR" --format sarif --no-exit-codes . >zizmor.sarif
+      - uses: github/codeql-action/upload-sarif@9b3254085494b55a0f7c4c2b3d2d52cc712ce370 # v4.39.1
+        with:
+          sarif_file: zizmor.sarif
+          category: zizmor
+
   actionlint:
     runs-on: ubuntu-latest
     steps:
