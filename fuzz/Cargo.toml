@@ -1,0 +1,39 @@
+# Fuzz targets for spin-life's parsers and engine (cargo-fuzz, libFuzzer). A crate of its
+# own, outside the published package and its own workspace, so spin-life itself stays
+# dependency-free. Run: cargo +nightly fuzz run toml   (see README > Fuzzing)
+[package]
+name = "spin-life-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2021"
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "=0.4.12"
+spin-life = { path = ".." }
+
+[workspace]
+members = ["."]
+
+[[bin]]
+name = "toml"
+path = "fuzz_targets/toml.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "iso"
+path = "fuzz_targets/iso.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "life"
+path = "fuzz_targets/life.rs"
+test = false
+doc = false
+bench = false
