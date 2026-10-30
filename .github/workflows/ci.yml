@@ -6,8 +6,7 @@ on:
   pull_request:
   workflow_dispatch:
 
-permissions:
-  contents: read
+permissions: {}
 
 # bash -eo pipefail, so a failure inside a pipeline fails the step (GitHub's default shell
 # has no pipefail). Enforced by .github/ci/check-workflows.sh.
@@ -17,6 +16,8 @@ defaults:
 
 jobs:
   test:
+    permissions:
+      contents: read
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -49,6 +50,8 @@ jobs:
   # including yanked versions, a tag, or a GitHub release). release-cut checks again right
   # before merging; this check makes a doomed release PR red as soon as it's opened.
   version-is-new:
+    permissions:
+      contents: read
     if: startsWith(github.head_ref || github.ref_name, 'release-plz-')
     runs-on: ubuntu-latest
     steps:
@@ -65,6 +68,8 @@ jobs:
   # Every line in src/ runs under the tests, the CLI included (the tests run the
   # real binary). Uncovered lines show up as annotations, one per file.
   coverage:
+    permissions:
+      contents: read
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -85,6 +90,8 @@ jobs:
   # instead of surfacing as a surprise major bump on the release PR (#30 quietly made
   # Life !Send). A deliberate break is fine: mark the title feat!: / fix!:.
   semver:
+    permissions:
+      contents: read
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     steps:
@@ -122,6 +129,8 @@ jobs:
   # are some (RustSec advisories, licenses, sources). The second step proves the ban works:
   # a copy with one dependency added must fail.
   deny:
+    permissions:
+      contents: read
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -148,6 +157,8 @@ jobs:
           echo "refused, as it should be"
 
   msrv:
+    permissions:
+      contents: read
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -162,6 +173,8 @@ jobs:
   # permissions, unpinned or impostor actions, persisted credentials. Findings fail the job and
   # show as annotations; a deliberate exception needs `# zizmor: ignore[<audit>] <why>` inline.
   zizmor:
+    permissions:
+      contents: read
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -203,6 +216,8 @@ jobs:
           retention-days: 30
 
   actionlint:
+    permissions:
+      contents: read
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -231,6 +246,8 @@ jobs:
   # main gets everything, sharded (mutants-full). Survivors show up as annotations, one per
   # file, listing each one. Configuration: .cargo/mutants.toml.
   mutants:
+    permissions:
+      contents: read
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     steps:
@@ -263,6 +280,8 @@ jobs:
           if-no-files-found: ignore
 
   mutants-full:
+    permissions:
+      contents: read
     if: github.event_name != 'pull_request'
     name: mutants (shard ${{ matrix.shard }}/8)
     runs-on: ubuntu-latest

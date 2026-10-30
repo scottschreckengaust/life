@@ -18,8 +18,7 @@ on:
         description: seconds per target
         default: "600"
 
-permissions:
-  contents: read
+permissions: {}
 
 # bash -eo pipefail, so a failure inside a pipeline fails the step (GitHub's default shell
 # has no pipefail). Enforced by .github/ci/check-workflows.sh.
@@ -34,6 +33,8 @@ env:
 
 jobs:
   fuzz:
+    permissions:
+      contents: read
     name: fuzz (${{ matrix.target }})
     runs-on: ubuntu-latest
     strategy:

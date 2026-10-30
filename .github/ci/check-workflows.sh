@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Every workflow runs its steps under bash -eo pipefail. GitHub's default shell is
-# `bash -e` with no pipefail, so `a | b` there passes when `a` fails, which is how the
+# Every workflow starts from no token permissions and runs its steps under bash -eo
+# pipefail. GitHub's default shell is `bash -e` with no pipefail, so `a | b` there passes when `a` fails, which is how the
 # release plan once read a failed tag lookup as "no tag". Fails listing the offenders.
 set -euo pipefail
 dir=${1:-.github/workflows}
@@ -19,6 +19,12 @@ for f in "$dir"/*.yml "$dir"/*.yaml; do
     d && r && /^    shell: *bash *(#.*)?$/ { ok=1 }
     END { exit !ok }' "$f"; then
     echo "::error file=$f::set top-level 'defaults: run: shell: bash' so pipelines fail on any failure"
+    bad=1
+  fi
+  # Every workflow starts from no permissions (`permissions: {}`), and each job asks for
+  # what it uses. The one exception proves the repository default by running with it.
+  if [[ "$(basename "$f")" != default-token-check.yml ]] && ! grep -qxE 'permissions: \{\}( *#.*)?' "$f"; then
+    echo "::error file=$f::start the workflow with top-level 'permissions: {}'; give each job only what it needs"
     bad=1
   fi
   # A job or step may only restate it: any other shell (sh, pwsh, a custom bash line)
