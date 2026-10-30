@@ -3,24 +3,15 @@
     "latest_immutable": true
   },
   "repository": {
-    "allow_auto_merge": true,
     "allow_forking": true,
-    "allow_merge_commit": false,
-    "allow_rebase_merge": false,
-    "allow_squash_merge": true,
-    "allow_update_branch": true,
-    "delete_branch_on_merge": true,
     "has_discussions": false,
     "has_projects": false,
     "has_wiki": false,
-    "squash_merge_commit_message": "PR_BODY",
-    "squash_merge_commit_title": "PR_TITLE",
     "visibility": "public",
     "web_commit_signoff_required": false
   },
   "rulesets": [
     {
-      "bypass_actors": [],
       "conditions": {
         "ref_name": {
           "exclude": [],
@@ -113,18 +104,6 @@
       "target": "branch"
     },
     {
-      "bypass_actors": [
-        {
-          "actor_id": 5533822,
-          "actor_type": "Integration",
-          "bypass_mode": "pull_request"
-        },
-        {
-          "actor_id": 345885,
-          "actor_type": "User",
-          "bypass_mode": "pull_request"
-        }
-      ],
       "conditions": {
         "ref_name": {
           "exclude": [],
@@ -155,13 +134,6 @@
       "target": "branch"
     },
     {
-      "bypass_actors": [
-        {
-          "actor_id": 5417633,
-          "actor_type": "Integration",
-          "bypass_mode": "always"
-        }
-      ],
       "conditions": {
         "ref_name": {
           "exclude": [],
@@ -181,7 +153,6 @@
       "target": "tag"
     },
     {
-      "bypass_actors": [],
       "conditions": {
         "ref_name": {
           "exclude": [],

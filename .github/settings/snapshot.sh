@@ -19,20 +19,18 @@ api() {
   printf '%s\n' "$out"
 }
 
-repo=$(api "repos/$REPO" --jq '{
-  visibility, allow_forking, has_wiki, has_projects, has_discussions,
-  allow_squash_merge, allow_merge_commit, allow_rebase_merge, allow_auto_merge,
-  allow_update_branch, delete_branch_on_merge, web_commit_signoff_required,
-  squash_merge_commit_title, squash_merge_commit_message
-}')
+# Merge options (squash only, PR title and description, auto-delete) and rulesets' bypass
+# lists aren't visible to a workflow token: they need Administration read (see the issue
+# on a read-only settings App). Squash-only is still checked, through main: reviewed's
+# allowed_merge_methods.
+repo=$(api "repos/$REPO" --jq '{visibility, allow_forking, has_wiki, has_projects, has_discussions, web_commit_signoff_required}')
 
 rulesets='[]'
 for id in $(api "repos/$REPO/rulesets" --jq '.[].id'); do
   one=$(api "repos/$REPO/rulesets/$id" --jq '{
     name, target, enforcement,
     conditions,
-    rules: ([.rules[] | {type, parameters}] | sort_by(.type)),
-    bypass_actors: ((.bypass_actors // []) | map({actor_type, actor_id, bypass_mode}) | sort_by(.actor_type, .actor_id))
+    rules: ([.rules[] | {type, parameters}] | sort_by(.type))
   }')
   rulesets=$(jq --argjson one "$one" '. + [$one]' <<<"$rulesets")
 done
