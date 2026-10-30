@@ -12,7 +12,7 @@ set -euo pipefail
 # silently somewhere in the middle.
 api() {
   local out
-  if ! out=$(api "$@" 2>&1); then
+  if ! out=$(gh api "$@" 2>&1); then
     echo "::error title=settings snapshot::can't read $1: $out" >&2
     exit 1
   fi
