@@ -98,6 +98,19 @@ fn errors_name_the_line() {
     rejects("a = {x 1}", 1, "expected `=` after `x`");
     rejects("a = {x = 1, x = 2}", 1, "`x` is defined twice");
     rejects("a = 1\na = 2", 2, "`a` is defined twice");
+    // Nesting is capped: 100 000 levels used to overflow the stack and abort.
+    let deep = |n: usize| format!("a = {}{}", "[".repeat(n), "]".repeat(n));
+    ok(&deep(64));
+    rejects(&deep(65), 1, "nest at most 64 deep");
+    rejects(&deep(100_000), 1, "nest at most 64 deep");
+    let tables = |n: usize| format!("a = {}1{}", "{x = ".repeat(n), "}".repeat(n));
+    ok(&tables(64));
+    rejects(&tables(65), 1, "nest at most 64 deep");
+    rejects(
+        "a = [{x = [{y = [[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[1",
+        1,
+        "nest at most 64 deep",
+    );
 }
 
 #[test]
