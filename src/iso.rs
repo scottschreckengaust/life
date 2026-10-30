@@ -134,6 +134,9 @@ pub fn duration(s: &str) -> Result<f64, String> {
     if rest.contains('W') && rest.contains(['D', 'T']) {
         return Err(bad("weeks don't combine with other components"));
     }
+    if !total.is_finite() {
+        return Err(bad("too large"));
+    }
     Ok(round_ms(total))
 }
 
@@ -247,6 +250,7 @@ mod tests {
         assert!(duration("P1M").unwrap_err().contains("use days (P30D)"));
         assert!(duration("P1H").unwrap_err().contains("hours, minutes and seconds go after T"));
         assert!(duration("PTT1H").unwrap_err().contains("T comes once"));
+        assert!(duration(&format!("PT{}H", "9".repeat(400))).unwrap_err().contains("too large"));
         for s in [
             "P",
             "PT",
