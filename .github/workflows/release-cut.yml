@@ -45,6 +45,16 @@ jobs:
     outputs:
       number: ${{ steps.due.outputs.number }}
     steps:
+      # Anyone with write access can start a workflow by hand. Starting this one early, or with
+      # check_tagger, is the maintainer's call alone (the schedule needs no check).
+      - name: started by hand only by the maintainer
+        if: github.event_name == 'workflow_dispatch'
+        env:
+          ACTOR: ${{ github.triggering_actor }}
+        run: |
+          [[ "$ACTOR" == scottschreckengaust ]] && exit 0
+          echo "::error::only scottschreckengaust may run release-cut by hand (started by $ACTOR)"
+          exit 1
       - id: due
         env:
           GH_TOKEN: ${{ github.token }}
@@ -148,6 +158,16 @@ jobs:
     environment: release
     permissions: {}
     steps:
+      # Anyone with write access can start a workflow by hand. Starting this one early, or with
+      # check_tagger, is the maintainer's call alone (the schedule needs no check).
+      - name: started by hand only by the maintainer
+        if: github.event_name == 'workflow_dispatch'
+        env:
+          ACTOR: ${{ github.triggering_actor }}
+        run: |
+          [[ "$ACTOR" == scottschreckengaust ]] && exit 0
+          echo "::error::only scottschreckengaust may run release-cut by hand (started by $ACTOR)"
+          exit 1
       - id: tagger
         name: release-tagger token (the only identity allowed to create v* tags)
         uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
