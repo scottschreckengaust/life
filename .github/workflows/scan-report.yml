@@ -5,6 +5,11 @@ name: scan-report
 # and line, in the run summary and in the check run's
 # text (readable with the REST API, unlike Security > Code scanning, and with no limit on
 # the number of findings, unlike annotations). Writes nothing but that check run.
+#
+# Check runs are public here. Scorecard's findings are public anyway (it publishes them to
+# the OpenSSF API), so they go out in full. CodeQL's could point at an unfixed bug, so only
+# the rule and location go out; the details stay in Security > Code scanning. All text is
+# reduced to printable ASCII and capped: it is read by automation and must stay data.
 
 on:
   workflow_run: # zizmor: ignore[dangerous-triggers] reads artifacts from this repo's own main-branch scan runs; checks out nothing, writes only a check run
@@ -39,9 +44,13 @@ jobs:
           run-id: ${{ github.event.workflow_run.id }}
           github-token: ${{ github.token }}
       - name: findings as a table
+        env:
+          SCAN: ${{ github.event.workflow_run.name }}
         run: |
-          python3 -I - sarif >findings.md <<'EOF'
-          import json, pathlib, sys
+          python3 -I - sarif "$SCAN" >findings.md <<'EOF'
+          import json, pathlib, re, sys
+          full = sys.argv[2] == "scorecard"
+          safe = lambda t, n: re.sub(r"[^ -~]", "", " ".join(str(t).split())).replace("|", "/").replace("`", "'")[:n]
           rows = []
           for f in sorted(pathlib.Path(sys.argv[1]).rglob("*.sarif")):
             for run in json.load(open(f))["runs"]:
@@ -51,11 +60,11 @@ jobs:
                 loc = (r.get("locations") or [{}])[0].get("physicalLocation", {})
                 path = loc.get("artifactLocation", {}).get("uri", "")
                 line = loc.get("region", {}).get("startLine", "")
-                msg = " ".join(r["message"]["text"].split()).replace("|", "/")
-                rows.append((name, path, line, msg))
+                msg = safe(r["message"]["text"], 400) if full else "details in Security > Code scanning"
+                rows.append((safe(name, 80), safe(path, 200), safe(line, 10), msg))
           print(f"{len(rows)} findings\n\n| check | where | finding |\n|---|---|---|")
           for name, path, line, msg in sorted(rows):
-              print(f"| {name} | `{path}:{line}` | {msg[:400]} |")
+              print(f"| {name} | `{path}:{line}` | {msg} |")
           EOF
           cat findings.md >>"$GITHUB_STEP_SUMMARY"
       - name: publish as a check run on the scanned commit
