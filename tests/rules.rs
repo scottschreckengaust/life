@@ -235,6 +235,25 @@ fn bad_values_say_what_they_should_be() {
 }
 
 #[test]
+fn durations_stay_within_a_day() {
+    // A session of billions of days used to pass `check` and then hang the run (its span
+    // ran far past the last day, and the timeline drew a row for every day of it).
+    rejects(
+        "[pursuit.a]\nsession = \"P99999999999D\"",
+        "pursuit.a.session: `P99999999999D` is longer than a day",
+    );
+    rejects("[pursuit.a]\nsession = \"PT25H\"", "is longer than a day (at most PT24H)");
+    rejects("[pursuit.a]\nlasts = \"P2D\"", "pursuit.a.lasts: `P2D` is longer than a day");
+    rejects("[pursuit.a]\nwhen = \"18:00/P2D\"", "pursuit.a.when: `18:00/P2D` is longer than a day");
+    rejects("[pursuit.a]\n[work]\nhours = \"09:00/PT25H\"", "work.hours: `09:00/PT25H` is longer than a day");
+    let huge = format!("PT{}H", "9".repeat(400));
+    rejects(&format!("[pursuit.a]\nsession = \"{huge}\""), "(too large)");
+    // A whole day is fine, as is a window that wraps past midnight.
+    Rules::parse("[pursuit.a]\nsession = \"PT24H\"\nwhen = \"22:00/06:00\"").unwrap();
+    Rules::parse("[pursuit.a]\nwhen = \"12:00/12:00\"").unwrap();
+}
+
+#[test]
 fn old_formats_point_to_iso() {
     rejects(
         "[pursuit.a]\n[sleep]\nrem_cycle = \"1h30m\"",
