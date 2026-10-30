@@ -69,11 +69,17 @@ jobs:
         run: |
           mkdir -p "$RUNNER_TEMP/corpus"
           cargo +"$NIGHTLY" fuzz run "$TARGET" "$RUNNER_TEMP/corpus" "fuzz/seeds/$TARGET" -- \
-            -max_total_time="$SECONDS_PER_TARGET" -rss_limit_mb=2048 -timeout=10
+            -max_total_time="$SECONDS_PER_TARGET" -rss_limit_mb=2048 -timeout=10 \
+            2>&1 | tee "$RUNNER_TEMP/fuzz.log"
       - name: print the crashing input
         if: failure()
         run: |
           shopt -s nullglob
+          # Why it crashed: the panic message or sanitizer report, which run logs only keep as
+          # long as the run does. Annotations are readable without downloading anything.
+          why=$(grep -E -A12 "panicked at|ERROR: (AddressSanitizer|libFuzzer)|SUMMARY:" "$RUNNER_TEMP/fuzz.log" \
+            | head -n 40 | cut -c1-300 | sed 's/%/%25/g' | awk '{printf "%s%%0A", $0}')
+          echo "::error title=fuzz $TARGET: why::${why:-no panic or sanitizer report in the log}"
           for f in fuzz/artifacts/"$TARGET"/*; do
             echo "::error title=fuzz $TARGET: $(basename "$f")::$(base64 -w0 "$f" | head -c 3000)"
           done
