@@ -280,7 +280,7 @@ examples/motto.rs   the motto, verbatim
 ## Testing
 
 `cargo test` runs everything in a few seconds: the reference life's scenarios, custom lives, every life-file
-error, the CLI as a shell sees it, golden outputs, and real-time runs against the wall clock. CI holds two lines:
+error, the CLI as a shell sees it, golden outputs, and real-time runs against the wall clock. CI also holds these lines:
 
 - **100% line coverage.** Every line in `src/` runs under the tests, the CLI included.
   Locally: `cargo llvm-cov --all-targets` ([cargo-llvm-cov](https://github.com/taiki-e/cargo-llvm-cov)).
@@ -290,6 +290,15 @@ error, the CLI as a shell sees it, golden outputs, and real-time runs against th
   changes that can't alter behaviour, are listed with reasons in [`.cargo/mutants.toml`](.cargo/mutants.toml).
   Locally: `cargo mutants` for everything (several hundred builds; `--shard 0/8` for an eighth of them), or
   `git diff main > my.diff && cargo mutants --in-diff my.diff` for what you changed.
+- **Fuzzing.** [cargo-fuzz](https://github.com/rust-fuzz/cargo-fuzz) feeds the TOML parser, the ISO 8601
+  parser and whole lives (parse a life file, then live it) inputs nobody thought of, checking that nothing
+  panics, hangs or records past the end of a run ([`fuzz/`](fuzz/), its own crate, so `spin-life` stays
+  dependency-free). A minute per target on PRs that touch the code, 15 minutes weekly. A crash fails the run and
+  prints its input, which becomes a regular test. Locally, with a nightly toolchain:
+  `cargo +nightly fuzz run toml` (or `iso`, `life`), seeded from `fuzz/seeds/`.
+- **No dependencies.** [cargo-deny](https://github.com/EmbarkStudios/cargo-deny) ([`deny.toml`](deny.toml))
+  fails CI if any crate but `spin-life` itself appears, and checks advisories, licenses and sources for the day
+  one is allowed.
 
 ## Verify what you download
 

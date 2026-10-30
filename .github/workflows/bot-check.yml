@@ -9,6 +9,9 @@ name: bot-check
 #   was given too much and this fails.
 # - Started from any branch but main, GitHub refuses the job: that is the environment's
 #   branch rule working.
+#
+# The lock-bot job runs in `lock`, which needs the maintainer's approval: approve it when
+# the run asks.
 
 on:
   workflow_dispatch:
@@ -60,3 +63,43 @@ jobs:
           fi
           echo "::notice::release-bot App can't write workflows, as intended"
           echo "### release-bot: ok, from $GITHUB_REF in environment bot" >>"$GITHUB_STEP_SUMMARY"
+
+  lock-bot:
+    if: github.repository_owner == 'scottschreckengaust'
+    runs-on: ubuntu-latest
+    environment: lock
+    permissions: {}
+    steps:
+      - id: token
+        name: "lock-bot token: contents, workflows and pull requests (its job)"
+        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
+        with:
+          client-id: ${{ vars.LOCK_CLIENT_ID }}
+          private-key: ${{ secrets.LOCK_PRIVATE_KEY }}
+          permission-contents: write
+          permission-workflows: write
+          permission-pull-requests: write
+      - name: the token can see this repository
+        env:
+          GH_TOKEN: ${{ steps.token.outputs.token }}
+        run: |
+          name=$(gh api "repos/$GITHUB_REPOSITORY" -q .full_name)
+          echo "::notice::lock-bot token works for $name (contents, workflows, pull requests: write)"
+      - id: too-much
+        name: "lock-bot token with actions: write (must be refused)"
+        continue-on-error: true
+        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
+        with:
+          client-id: ${{ vars.LOCK_CLIENT_ID }}
+          private-key: ${{ secrets.LOCK_PRIVATE_KEY }}
+          permission-actions: write
+      - name: the App can't run or change workflow runs
+        env:
+          OUTCOME: ${{ steps.too-much.outcome }}
+        run: |
+          if [[ "$OUTCOME" == success ]]; then
+            echo "::error::the lock-bot App has Actions permission; remove it (Settings > Developer settings > GitHub Apps)"
+            exit 1
+          fi
+          echo "::notice::lock-bot App can't touch workflow runs, as intended"
+          echo "### lock-bot: ok, from $GITHUB_REF in environment lock" >>"$GITHUB_STEP_SUMMARY"
