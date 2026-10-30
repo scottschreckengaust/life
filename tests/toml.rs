@@ -103,6 +103,9 @@ fn errors_name_the_line() {
     ok(&deep(64));
     rejects(&deep(65), 1, "nest at most 64 deep");
     rejects(&deep(100_000), 1, "nest at most 64 deep");
+    // The limit is on depth, not on how many there are: siblings don't add up.
+    ok(&format!("a = [{}]", "[[]], ".repeat(200)));
+    ok(&(0..200).map(|i| format!("k{i} = [{{x = [1]}}]\n")).collect::<String>());
     let tables = |n: usize| format!("a = {}1{}", "{x = ".repeat(n), "}".repeat(n));
     ok(&tables(64));
     rejects(&tables(65), 1, "nest at most 64 deep");

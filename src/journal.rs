@@ -343,3 +343,23 @@ impl Journal {
         out
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn end_at_cuts_spans_and_drops_what_falls_after() {
+        let mut j = Journal::new(1, vec![], "idea".into());
+        let span = |start, end| Span { day: 1, what: Activity::Live, start, end };
+        j.spans = vec![span(0.0, 10.0), span(5.0, 20.0), span(15.0, 30.0), span(20.0, 30.0), span(0.0, 1e-9)];
+        j.moments =
+            vec![Moment { at: 15.0, note: "on time".into() }, Moment { at: 15.5, note: "late".into() }];
+        j.end_at(15.0);
+        // Cut at the end; a span starting at or after it is gone, not empty or inside out;
+        // so is one too short to count. A diary line exactly at the end stays.
+        assert_eq!(j.spans, vec![span(0.0, 10.0), span(5.0, 15.0)]);
+        assert_eq!(j.moments.len(), 1);
+        assert_eq!(j.moments[0].note, "on time");
+    }
+}

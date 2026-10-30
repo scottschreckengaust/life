@@ -224,7 +224,7 @@ impl Parser<'_> {
         match self.peek() {
             Some(b'"') => self.basic_string().map(Value::Str),
             Some(b'\'') => self.literal_string().map(Value::Str),
-            Some(b'[' | b'{') if self.depth == MAX_DEPTH => {
+            Some(b'[' | b'{') if self.depth >= MAX_DEPTH => {
                 self.err(format!("arrays and inline tables nest at most {MAX_DEPTH} deep"))
             }
             Some(b'[') => self.nested(Self::array),

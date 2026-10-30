@@ -459,6 +459,8 @@ fn nothing_is_recorded_past_the_end_of_a_run() {
             let what = format!("{who} / {}", scenario.name);
             for span in &j.spans {
                 assert!(span.end <= end + 1e-9, "{what}: {span:?} ends after the run ({end})");
+                // Spans that began after the end are dropped, not left empty or inside out.
+                assert!(span.end - span.start > 1e-9, "{what}: {span:?} is empty or reversed");
             }
             assert!(j.moments.iter().all(|m| m.at <= end + 1e-9), "{what}: a diary line after the run");
             let rows = j.timeline().lines().filter(|l| l.starts_with("day ")).count();
