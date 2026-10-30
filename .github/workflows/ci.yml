@@ -166,6 +166,12 @@ jobs:
         with:
           sarif_file: zizmor.sarif
           category: zizmor
+      # The raw results, downloadable from the run (the Security tab needs a browser login).
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: zizmor-sarif
+          path: zizmor.sarif
+          retention-days: 30
 
   actionlint:
     runs-on: ubuntu-latest
