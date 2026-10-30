@@ -318,6 +318,10 @@ Cargo verifies every download against it, and `Cargo.lock` pins it. The release 
 its own provenance, and the release workflow proves it is byte-for-byte the file crates.io serves, so you can run
 `gh attestation verify` on a `.crate` downloaded from crates.io too.
 
+Before anything is published, the release workflow scans every asset, archives and unpacked, with
+[ClamAV](https://www.clamav.net/). The scan only reports for now; it doesn't block a release (#60). The engine and
+signature versions it used are in the release run's summary.
+
 ## Contributing from a fork
 
 Fork PRs are welcome, and they can't reach anything that ships:
