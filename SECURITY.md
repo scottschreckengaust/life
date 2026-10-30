@@ -33,4 +33,4 @@ Every release's binaries and `.crate` come with a `.sha256` and signed build pro
 gh attestation verify spin-life-x86_64-unknown-linux-musl.tar.gz -R scottschreckengaust/life
 ```
 
-Releases are immutable once published, and only the release workflow can create `v*` tags.
+Releases are immutable once published, and only the release-tagger App, which the release workflow uses, can create `v*` tags.
