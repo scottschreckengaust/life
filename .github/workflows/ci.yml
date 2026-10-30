@@ -179,10 +179,14 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+      # Installed by install-action, which checks the release's checksum (Scorecard flags
+      # piping a downloaded script into bash).
+      - uses: taiki-e/install-action@a4d3f3f761dcd95cce1b72cb61cb6d1963438177 # v2.87.30
+        with:
+          tool: actionlint@1.7.12
       - name: actionlint (findings show up as annotations on the PR)
         run: |
-          bash <(curl -fsSL https://raw.githubusercontent.com/rhysd/actionlint/v1.7.12/scripts/download-actionlint.bash) 1.7.12 2>&1 | tail -3
-          out=$(./actionlint -oneline 2>&1) && exit 0
+          out=$(actionlint -oneline 2>&1) && exit 0
           echo "$out"
           while IFS= read -r line; do echo "::error::$line"; done <<<"$out"
           exit 1
