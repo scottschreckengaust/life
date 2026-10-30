@@ -69,8 +69,12 @@ jobs:
         run: |
           mkdir -p "$RUNNER_TEMP/corpus"
           # Symbolized stacks ("in spin_life::...", not bare addresses), when the runner has LLVM.
-          sym=$(ls /usr/lib/llvm-*/bin/llvm-symbolizer 2>/dev/null | sort -V | tail -n 1 || true)
-          if [[ -n "$sym" ]]; then export ASAN_SYMBOLIZER_PATH="$sym" PATH="$(dirname "$sym"):$PATH"; fi
+          sym=""
+          for s in /usr/lib/llvm-*/bin/llvm-symbolizer; do if [[ -x "$s" ]]; then sym=$s; fi; done
+          if [[ -n "$sym" ]]; then
+            ASAN_SYMBOLIZER_PATH=$sym PATH="${sym%/*}:$PATH"
+            export ASAN_SYMBOLIZER_PATH PATH
+          fi
           cargo +"$NIGHTLY" fuzz run "$TARGET" "$RUNNER_TEMP/corpus" "fuzz/seeds/$TARGET" -- \
             -max_total_time="$SECONDS_PER_TARGET" -rss_limit_mb=2048 -timeout=10 \
             2>&1 | tee "$RUNNER_TEMP/fuzz.log"
