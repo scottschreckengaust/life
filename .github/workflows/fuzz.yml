@@ -60,6 +60,9 @@ jobs:
             echo "::error title=fuzz/Cargo.lock is missing::commit this as fuzz/Cargo.lock:%0A$lock"
             exit 1
           fi
+          # spin-life itself is a path dependency whose version moves with every release:
+          # refresh only that entry, then everything from crates.io must match the lock.
+          cargo +"$NIGHTLY" update --manifest-path fuzz/Cargo.toml -p spin-life
           cargo +"$NIGHTLY" metadata --locked --format-version 1 --manifest-path fuzz/Cargo.toml >/dev/null
       - name: fuzz ${{ matrix.target }} for ${{ env.SECONDS_PER_TARGET }}s
         run: |
