@@ -47,3 +47,29 @@ pkg-fmt = "zip"
 [profile.mutants]
 inherits = "test"
 debug = 0
+
+# The clippy ratchet (#57): pedantic and nursery lints, turned on a stage at a time and never
+# off again. CI runs clippy with -D warnings, so each of these is an error there.
+# (MSRV 1.70's Cargo ignores this table with a warning; clippy runs on stable.)
+[lints.clippy]
+# Stage 1: mechanical, no behaviour change.
+bool_to_int_with_if = "warn"
+cast_lossless = "warn"
+default_trait_access = "warn"
+doc_markdown = "warn"
+enum_glob_use = "warn"
+format_push_string = "warn"
+ignored_unit_patterns = "warn"
+inefficient_to_string = "warn"
+items_after_statements = "warn"
+needless_for_each = "warn"
+redundant_closure_for_method_calls = "warn"
+semicolon_if_nothing_returned = "warn"
+single_match_else = "warn"
+unnested_or_patterns = "warn"
+unreadable_literal = "warn"
+derive_partial_eq_without_eq = "warn"
+or_fun_call = "warn"
+redundant_clone = "warn"
+use_self = "warn"
+useless_let_if_seq = "warn"

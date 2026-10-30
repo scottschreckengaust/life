@@ -19,19 +19,19 @@ pub enum Activity {
 
 impl Activity {
     /// The built-in activities, in the order the names in [`crate::rules::BUILTIN`] use.
-    pub const BUILTIN: [Activity; 6] =
-        [Activity::Sleep, Activity::Wired, Activity::Eat, Activity::Work, Activity::Travel, Activity::Live];
+    pub const BUILTIN: [Self; 6] =
+        [Self::Sleep, Self::Wired, Self::Eat, Self::Work, Self::Travel, Self::Live];
 
     /// When two things overlap on the timeline, the higher rank is drawn.
     fn rank(self) -> u8 {
         match self {
-            Activity::Live => 0,
-            Activity::Eat => 1,
-            Activity::Work => 2,
-            Activity::Travel => 3,
-            Activity::Pursuit(_) => 4,
-            Activity::Sleep => 5,
-            Activity::Wired => 6,
+            Self::Live => 0,
+            Self::Eat => 1,
+            Self::Work => 2,
+            Self::Travel => 3,
+            Self::Pursuit(_) => 4,
+            Self::Sleep => 5,
+            Self::Wired => 6,
         }
     }
 }
@@ -54,7 +54,7 @@ pub struct Moment {
 }
 
 /// Counters that are not durations.
-#[derive(Clone, Debug, Default, PartialEq)]
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Tally {
     /// Full REM cycles.
     pub dreams: u32,
@@ -98,7 +98,7 @@ pub struct Journal {
 
 impl Journal {
     pub(crate) fn new(days: usize, pursuits: Vec<(String, char)>, signal: String) -> Self {
-        Journal {
+        Self {
             spans: vec![],
             moments: vec![],
             tallies: vec![Tally::default(); days],
@@ -225,7 +225,7 @@ impl Journal {
         for d in first..=rows {
             let row: String = (0..48)
                 .map(|k| {
-                    let t = (d - 1) as f64 * EARTH_SPIN + k as f64 * 0.5 + 0.25;
+                    let t = (d - 1) as f64 * EARTH_SPIN + f64::from(k) * 0.5 + 0.25;
                     self.doing_at(t).map_or(' ', |a| self.glyph(a))
                 })
                 .collect();
@@ -254,11 +254,11 @@ impl Journal {
                 o.str("name", self.name(a));
                 o.str("glyph", &self.glyph(a).to_string());
                 o.bool("pursuit", matches!(a, Activity::Pursuit(_)));
-            })
+            });
         });
         let days: Vec<DaySummary> = self.day_range().map(|d| self.day(d)).collect();
         let hours = |out: &mut String, h: &dyn Fn(&str) -> f64| {
-            object(out, |o| all.iter().for_each(|&a| o.num(self.name(a), h(self.name(a)))))
+            object(out, |o| all.iter().for_each(|&a| o.num(self.name(a), h(self.name(a)))));
         };
         array(o.key("days"), &days, |out, d| {
             object(out, |o| {
@@ -268,7 +268,7 @@ impl Journal {
                 o.bool("signal", d.tally.signal);
                 o.int("coffee", d.tally.coffee);
                 o.int("wakeups", d.tally.wakeups);
-            })
+            });
         });
         object(o.key("totals"), |o| {
             hours(o.key("hours"), &|n| days.iter().map(|d| d.hours(n)).sum());
@@ -283,14 +283,14 @@ impl Journal {
                 o.str("what", self.name(s.what));
                 o.num("start", s.start * 3600.0);
                 o.num("end", s.end * 3600.0);
-            })
+            });
         });
         array(o.key("diary"), &self.moments, |out, m| {
             object(out, |o| {
                 o.num("at", m.at * 3600.0);
                 o.str("when", &hhmm(m.at));
                 o.str("note", &m.note);
-            })
+            });
         });
     }
 
@@ -298,7 +298,7 @@ impl Journal {
         let pursuits: Vec<&str> = self.pursuits.iter().map(|p| p.0.as_str()).collect();
         let mut cols: Vec<String> =
             ["sleep", "wired", "dreams", &self.signal, "coffee", "work"].map(String::from).to_vec();
-        cols.extend(pursuits.iter().map(|p| p.to_string()));
+        cols.extend(pursuits.iter().map(|p| (*p).to_string()));
         cols.push("wakeups".into());
         let width = cols.iter().map(|c| c.chars().count()).max().unwrap_or(6).max(6) + 2;
         let mut out = String::from("\nday");
