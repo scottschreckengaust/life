@@ -12,7 +12,7 @@ documentation = "https://docs.rs/spin-life"
 readme = "README.md"
 keywords = ["simulation", "async", "virtual-time", "scheduling", "life"]
 categories = ["simulation", "asynchronous", "command-line-utilities"]
-exclude = [".cargo/", ".github/", "release-plz.toml"]
+exclude = [".cargo/", ".github/", "deny.toml", "release-plz.toml"]
 
 # Zero dependencies: the runtime, select!, join!, the alarm and the config parser are all in here.
 [dependencies]

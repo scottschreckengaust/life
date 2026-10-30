@@ -5,4 +5,5 @@
 /Cargo.toml        @scottschreckengaust
 /Cargo.lock        @scottschreckengaust
 /release-plz.toml  @scottschreckengaust
+/deny.toml         @scottschreckengaust
 /presets/          @scottschreckengaust

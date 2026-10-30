@@ -1,0 +1,25 @@
+# cargo-deny (https://embarkstudios.github.io/cargo-deny/), run by CI's `deny` job.
+#
+# The policy: spin-life has no dependencies. bans.allow lists only the crate itself, so
+# adding any dependency fails CI until this file says otherwise, a reviewed, code-owned
+# change. The other sections pass trivially today and do their job the day one is allowed.
+
+[advisories]
+# RustSec: any advisory, including unmaintained and unsound crates, fails; so does a yanked
+# version.
+yanked = "deny"
+ignore = []
+
+[licenses]
+allow = ["MIT"]
+confidence-threshold = 0.93
+
+[bans]
+allow = ["spin-life"]
+multiple-versions = "deny"
+wildcards = "deny"
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"
+allow-registry = ["https://github.com/rust-lang/crates.io-index"]
