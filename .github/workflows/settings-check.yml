@@ -1,7 +1,15 @@
 name: settings-check
 
-# Run by hand to prove two repository settings by behaviour, since reading them needs an
-# admin token no workflow has. Settings > Actions > General:
+# Proves the repository's settings, weekly, on every push to main and by hand:
+#
+# snapshot: every setting a workflow token can read (merge options, rulesets with their
+#   rules and bypass lists, immutable releases, private vulnerability reporting, code
+#   scanning setup) must match .github/settings/expected.json, which is code-owned. To change
+#   a setting on purpose, change it in GitHub and update expected.json in a PR
+#   (REPO=owner/name bash .github/settings/snapshot.sh > .github/settings/expected.json).
+#
+# The rest can't be read without an admin token, so they're proved by behaviour.
+# Settings > Actions > General:
 #
 #   - Workflow permissions: "Read repository contents and packages permissions"
 #     Proved by default-token-check.yml, the one workflow without `permissions: {}` (a job
@@ -14,6 +22,12 @@ name: settings-check
 
 on:
   workflow_dispatch:
+  push:
+    branches: [main]
+  schedule:
+    - cron: "11 7 * * 1" # Mondays
+  pull_request:
+    paths: [".github/settings/**", ".github/workflows/settings-check.yml"]
 
 permissions: {}
 
@@ -24,6 +38,31 @@ defaults:
     shell: bash
 
 jobs:
+  snapshot:
+    if: github.repository_owner == 'scottschreckengaust'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: read # the code scanning setup
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: the live settings match .github/settings/expected.json
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+        run: |
+          bash .github/settings/snapshot.sh >live.json
+          if diff -u .github/settings/expected.json live.json >settings.diff; then
+            echo "::notice::every readable setting matches .github/settings/expected.json"
+            echo "- ✅ settings match the committed snapshot" >>"$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          { echo '### ❌ settings drifted from .github/settings/expected.json'; echo '```diff'; cat settings.diff; echo '```'; } >>"$GITHUB_STEP_SUMMARY"
+          grep -E '^[-+][^-+]' settings.diff | head -40 | while IFS= read -r line; do echo "::error title=settings drift::$line"; done
+          exit 1
+
   no-actions-prs:
     if: github.repository_owner == 'scottschreckengaust'
     runs-on: ubuntu-latest
