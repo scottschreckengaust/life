@@ -39,3 +39,9 @@ jobs:
         with:
           sarif_file: scorecard.sarif
           category: scorecard
+      # The raw results, downloadable from the run (the Security tab needs a browser login).
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: scorecard-sarif
+          path: scorecard.sarif
+          retention-days: 30
