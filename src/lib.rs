@@ -155,8 +155,11 @@ impl Drop for Doing<'_, '_> {
     }
 }
 
+/// Day `day`'s hour `hour` in absolute hours, on the clock's millisecond. `now()` is always a
+/// whole millisecond, so a time compared with it has to be one too: unrounded, day 2's 02:13
+/// is a hair past the millisecond its alarm rings on, and the page that rang it was missed.
 fn abs(day: usize, hour: f64) -> f64 {
-    (day - 1) as f64 * EARTH_SPIN + hour
+    iso::round_ms((day - 1) as f64 * EARTH_SPIN + hour)
 }
 
 impl<'r> Life<'r> {
@@ -657,15 +660,20 @@ impl<'r> Life<'r> {
     }
 
     /// When today's afternoon coffee stops keeping you awake.
+    /// Rounded to the clock's millisecond: `dream` compares it with `now()`, which is always
+    /// a whole millisecond. Unrounded (23:10 + 3h is no exact f64), it sat a hair past the
+    /// millisecond the clock stops on, so the night never got there and never ended.
     fn caffeine(&self) -> f64 {
         let c = &self.rules.caffeine;
         let today = self.today.get();
-        self.coffee
+        let wired = self
+            .coffee
             .borrow()
             .iter()
             .filter(|cup| cup.0 == today && cup.1 >= abs(today, c.cutoff))
             .map(|cup| cup.1 + c.wired + c.per_extra_shot * f64::from(cup.2.saturating_sub(1)))
-            .fold(f64::NEG_INFINITY, f64::max)
+            .fold(f64::NEG_INFINITY, f64::max);
+        iso::round_ms(wired)
     }
 
     fn cycles(hours: f64, cycle: f64) -> u32 {
