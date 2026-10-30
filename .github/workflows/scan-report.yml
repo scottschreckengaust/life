@@ -1,0 +1,82 @@
+name: scan-report
+
+# After each Scorecard or CodeQL run on main, publish its findings as a check run on that
+# commit ("scorecard findings", "codeql findings"): one row per finding, with the rule, file
+# and line, in the run summary and in the check run's
+# text (readable with the REST API, unlike Security > Code scanning, and with no limit on
+# the number of findings, unlike annotations). Writes nothing but that check run.
+#
+# Check runs are public here. Scorecard's findings are public anyway (it publishes them to
+# the OpenSSF API), so they go out in full. CodeQL's could point at an unfixed bug, so only
+# the rule and location go out; the details stay in Security > Code scanning. All text is
+# reduced to printable ASCII and capped: it is read by automation and must stay data.
+
+on:
+  workflow_run: # zizmor: ignore[dangerous-triggers] reads artifacts from this repo's own main-branch scan runs; checks out nothing, writes only a check run
+    workflows: [scorecard, codeql]
+    types: [completed]
+
+permissions: {}
+
+# bash -eo pipefail, so a failure inside a pipeline fails the step (GitHub's default shell
+# has no pipefail). Enforced by .github/ci/check-workflows.sh.
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  report:
+    if: >-
+      github.repository_owner == 'scottschreckengaust' &&
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.head_branch == 'main' &&
+      github.event.workflow_run.head_repository.full_name == github.repository
+    runs-on: ubuntu-latest
+    permissions:
+      actions: read # download the other run's artifact
+      checks: write # publish the findings as a check run
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: "*-sarif*"
+          merge-multiple: true
+          path: sarif
+          run-id: ${{ github.event.workflow_run.id }}
+          github-token: ${{ github.token }}
+      - name: findings as a table
+        env:
+          SCAN: ${{ github.event.workflow_run.name }}
+        run: |
+          python3 -I - sarif "$SCAN" >findings.md <<'EOF'
+          import json, pathlib, re, sys
+          full = sys.argv[2] == "scorecard"
+          safe = lambda t, n: re.sub(r"[^ -~]", "", " ".join(str(t).split())).replace("|", "/").replace("`", "'")[:n]
+          rows = []
+          for f in sorted(pathlib.Path(sys.argv[1]).rglob("*.sarif")):
+            for run in json.load(open(f))["runs"]:
+              rules = {r["id"]: r for r in run["tool"]["driver"].get("rules", [])}
+              for r in run["results"]:
+                name = rules.get(r["ruleId"], {}).get("name") or r["ruleId"]
+                loc = (r.get("locations") or [{}])[0].get("physicalLocation", {})
+                path = loc.get("artifactLocation", {}).get("uri", "")
+                line = loc.get("region", {}).get("startLine", "")
+                msg = safe(r["message"]["text"], 400) if full else "details in Security > Code scanning"
+                rows.append((safe(name, 80), safe(path, 200), safe(line, 10), msg))
+          print(f"{len(rows)} findings\n\n| check | where | finding |\n|---|---|---|")
+          for name, path, line, msg in sorted(rows):
+              print(f"| {name} | `{path}:{line}` | {msg} |")
+          EOF
+          cat findings.md >>"$GITHUB_STEP_SUMMARY"
+      - name: publish as a check run on the scanned commit
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SHA: ${{ github.event.workflow_run.head_sha }}
+          SCAN: ${{ github.event.workflow_run.name }}
+          REPO: ${{ github.repository }}
+        run: |
+          n=$(head -1 findings.md | cut -d' ' -f1)
+          jq -n --arg sha "$SHA" --arg n "$n" --rawfile text findings.md \
+            --arg scan "$SCAN" \
+            '{name: "\($scan) findings", head_sha: $sha, status: "completed", conclusion: "neutral",
+              output: {title: "\($n) \($scan) findings", summary: "\($n) findings from \($scan)", text: ($text | .[0:65000])}}' |
+            gh api -X POST "repos/$REPO/check-runs" --input - -q .html_url
