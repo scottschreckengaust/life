@@ -3,8 +3,7 @@ name: settings-check
 # Proves the repository's settings, weekly, on every push to main and by hand:
 #
 # snapshot: every setting a workflow token can read (merge options, rulesets with their
-#   rules and bypass lists, immutable releases, private vulnerability reporting, code
-#   scanning setup) must match .github/settings/expected.json, which is code-owned. To change
+#   rules and bypass lists, immutable releases, private vulnerability reporting) must match .github/settings/expected.json, which is code-owned. To change
 #   a setting on purpose, change it in GitHub and update expected.json in a PR
 #   (REPO=owner/name bash .github/settings/snapshot.sh > .github/settings/expected.json).
 #
@@ -43,7 +42,6 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
-      security-events: read # the code scanning setup
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:

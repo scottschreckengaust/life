@@ -210,7 +210,6 @@
     }
   ],
   "security": {
-    "codeql_default_setup": "not-configured",
     "private_vulnerability_reporting": true
   }
 }

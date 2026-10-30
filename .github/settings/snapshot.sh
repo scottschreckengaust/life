@@ -42,8 +42,9 @@ rulesets=$(jq 'sort_by(.name)' <<<"$rulesets")
 # the latest release shows whether it is on now.
 releases=$(api "repos/$REPO/releases/latest" --jq '{latest_immutable: .immutable}')
 pvr=$(api "repos/$REPO/private-vulnerability-reporting" --jq '{private_vulnerability_reporting: .enabled}')
-codeql=$(api "repos/$REPO/code-scanning/default-setup" --jq '{codeql_default_setup: .state}')
+# (The CodeQL setup needs an admin token to read; codeql.yml running on every PR shows the
+# advanced setup is in use.)
 
 jq -n --argjson repo "$repo" --argjson rulesets "$rulesets" --argjson releases "$releases" \
-  --argjson pvr "$pvr" --argjson codeql "$codeql" \
-  '{repository: $repo, rulesets: $rulesets, releases: $releases, security: ($pvr + $codeql)}' --sort-keys
+  --argjson pvr "$pvr" \
+  '{repository: $repo, rulesets: $rulesets, releases: $releases, security: $pvr}' --sort-keys
