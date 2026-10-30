@@ -11,8 +11,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-- no input can hang or quietly bend a run: cut at run end, real limits only ([#62](https://github.com/scottschreckengaust/life/pull/62))
-- a life file's durations stay within a day, so an absurd one can't hang a run ([#59](https://github.com/scottschreckengaust/life/pull/59))
+- an absurdly long session or opportunity no longer hangs a run: a run never records past its own end, so durations of any finite length work, and one too large to be a number is refused ([#59](https://github.com/scottschreckengaust/life/pull/59), [#62](https://github.com/scottschreckengaust/life/pull/62))
+- `--speed-up` so large that an hour takes under a nanosecond no longer hangs; it says to use `--instant` ([#62](https://github.com/scottschreckengaust/life/pull/62))
+- a life file nesting arrays or inline tables more than 64 deep is an error, not a stack-overflow crash ([#62](https://github.com/scottschreckengaust/life/pull/62))
+- `sleep.signal_after` beyond 4294967295 or below 0 is an error, instead of wrapping round to 0 ([#62](https://github.com/scottschreckengaust/life/pull/62))
+- `--days` outside 1 to 366 is an error, like a scenario's `days`, instead of being clamped; a daily recurring window may be at most `PT24H` ([#62](https://github.com/scottschreckengaust/life/pull/62))
 
 ### Other
 
