@@ -58,7 +58,8 @@ jobs:
             exit 0
           fi
           { echo '### ❌ settings drifted from .github/settings/expected.json'; echo '```diff'; cat settings.diff; echo '```'; } >>"$GITHUB_STEP_SUMMARY"
-          grep -E '^[-+][^-+]' settings.diff | head -40 | while IFS= read -r line; do echo "::error title=settings drift::$line"; done
+          # One annotation with the whole diff (GitHub keeps only 10 per step).
+          echo "::error title=settings drift::$(grep -E '^[-+][^-+]' settings.diff | sed 's/%/%25/g' | awk '{printf "%s%%0A", $0}')"
           exit 1
 
   no-actions-prs:
