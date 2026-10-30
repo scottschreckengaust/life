@@ -33,4 +33,6 @@ Every release's binaries and `.crate` come with a `.sha256` and signed build pro
 gh attestation verify spin-life-x86_64-unknown-linux-musl.tar.gz -R scottschreckengaust/life
 ```
 
+Before a release is published, its binaries and `.crate`, archives and unpacked, are scanned with [ClamAV](https://www.clamav.net/) for known malware; the result is in that release run's summary. The scan is report-only for now (#60), since brand-new unsigned Windows binaries can draw false positives. The repository tree is scanned weekly too.
+
 Releases are immutable once published, and only the release-tagger App, which the release workflow uses, can create `v*` tags.
