@@ -72,7 +72,7 @@ fn happy_path_repeats() {
         hours(&j, d, "sleep", 8.0);
     }
     let (two, three) = (j.day(2), j.day(3));
-    assert_eq!((two.hours("geek"), two.tally.clone()), (three.hours("geek"), three.tally.clone()));
+    assert_eq!((two.hours("geek"), two.tally), (three.hours("geek"), three.tally));
 }
 
 #[test]
@@ -444,7 +444,7 @@ fn nothing_is_recorded_past_the_end_of_a_run() {
     // any run: no span or diary line may reach past the run's last morning, and the
     // timeline has one row per day.
     let mut lives: Vec<(Rules, String)> =
-        PRESETS.iter().map(|(name, ..)| (Rules::preset(name).unwrap(), name.to_string())).collect();
+        PRESETS.iter().map(|(name, ..)| (Rules::preset(name).unwrap(), (*name).to_string())).collect();
     let src = Rules::preset_source("scott")
         .unwrap()
         .replace("session = \"PT2H\"", "session = \"P99999999999D\"")

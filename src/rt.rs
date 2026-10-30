@@ -24,7 +24,7 @@ const MS_PER_HOUR: f64 = 3_600_000.0;
 const MAIN: usize = usize::MAX;
 
 /// How the clock moves.
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Mode {
     /// Time travel: idle means "skip to the next timer".
     Virtual,
@@ -46,7 +46,7 @@ struct TaskWaker {
 
 impl Wake for TaskWaker {
     fn wake(self: Arc<Self>) {
-        self.wake_by_ref()
+        self.wake_by_ref();
     }
     fn wake_by_ref(self: &Arc<Self>) {
         let mut q = self.ready.queue.lock().unwrap();
@@ -151,7 +151,9 @@ impl Exec {
             *timers = keep;
             due
         };
-        due.into_iter().for_each(|(_, w)| w.wake());
+        for (_, w) in due {
+            w.wake();
+        }
     }
 }
 
@@ -222,7 +224,7 @@ pub fn block_on_live_from<F: Future>(mode: Mode, start: f64, live_from: f64, fut
 
 /// The current simulated time, in hours.
 pub fn now() -> f64 {
-    with(|e| e.now()) as f64 / MS_PER_HOUR
+    with(Exec::now) as f64 / MS_PER_HOUR
 }
 
 /// A timer future. Cancel it by dropping it.
@@ -259,7 +261,7 @@ pub fn sleep_until(at: f64) -> Sleep {
 
 /// Sleep for `hours` simulated hours.
 pub fn sleep(hours: f64) -> Sleep {
-    Sleep { at: with(|e| e.now()) + ms(hours), armed: false }
+    Sleep { at: with(Exec::now) + ms(hours), armed: false }
 }
 
 /// A handle to a spawned task.
@@ -273,7 +275,7 @@ impl JoinHandle {
             if let Some(slot) = e.tasks.borrow_mut().get_mut(self.0) {
                 *slot = None;
             }
-        })
+        });
     }
 }
 
