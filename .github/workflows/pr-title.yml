@@ -3,9 +3,14 @@ name: pr-title
 # PRs are squash-merged, so the title becomes the commit message that release-plz reads.
 # It must be a Conventional Commit: feat: / fix: / docs: / ci: / chore: ..., with ! for
 # breaking changes (feat!: ...).
+#
+# Plain pull_request (not pull_request_target): it only reads the PR, which a fork's
+# read-only token can do, and GitHub disables pull_request_target on public repos by default
+# from December 2026. The workflow file comes from the PR, but .github/ is code-owned, so a
+# PR that edits this check needs the maintainer's review.
 
 on:
-  pull_request_target: # zizmor: ignore[dangerous-triggers] reads the title only; never checks out the PR's code
+  pull_request:
     types: [opened, edited, synchronize, reopened]
 
 permissions:
