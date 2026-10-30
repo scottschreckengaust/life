@@ -3,9 +3,15 @@ name: rehearse-reminder
 # A PR that changes the release machinery gets one comment saying to rehearse it before
 # merging (README > Releasing > Rehearsals). CI can't catch a broken release: only running
 # the pipeline does.
+#
+# Plain pull_request (not pull_request_target, which GitHub disables on public repos by
+# default from December 2026). A fork PR's token can't comment, and neither can Dependabot's
+# (its weekly actions bump touches the release workflows), so those get the reminder as a
+# warning and in the run summary instead; the maintainer reviews those PRs anyway (.github/
+# and Cargo.toml are code-owned).
 
 on:
-  pull_request_target: # zizmor: ignore[dangerous-triggers] reads the PR's file list only; never checks out the PR's code
+  pull_request:
     types: [opened, synchronize, reopened]
     paths:
       - .github/workflows/release.yml
@@ -37,6 +43,7 @@ jobs:
       GH_TOKEN: ${{ github.token }}
       REPO: ${{ github.repository }}
       PR: ${{ github.event.pull_request.number }}
+      CAN_COMMENT: ${{ github.event.pull_request.head.repo.full_name == github.repository && github.actor != 'dependabot[bot]' }}
     steps:
       - name: comment once
         shell: bash # -o pipefail: a failed API call fails the step instead of looking like "nothing to do"
@@ -69,4 +76,9 @@ jobs:
 
           A rehearsal can't check the release-tagger App (run **release-cut** with \`check_tagger\`) or crates.io trusted
           publishing (only a real release proves it). See README › Releasing › Rehearsals."
+          if [[ "$CAN_COMMENT" != true ]]; then
+            echo "::warning::this PR changes the release machinery; rehearse it before merging (see the run summary)"
+            echo "$body" >>"$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
           gh pr comment "$PR" -R "$REPO" --body "$body"
