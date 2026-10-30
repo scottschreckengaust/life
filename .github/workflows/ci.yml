@@ -118,6 +118,35 @@ jobs:
           echo "::error::this breaks the public API since $base (see above). Fix it, or mark the title feat!:/fix!: and push again (CI doesn't re-run on a title edit)."
           exit 1
 
+  # cargo-deny (deny.toml): no dependencies at all, and the checks that matter once there
+  # are some (RustSec advisories, licenses, sources). The second step proves the ban works:
+  # a copy with one dependency added must fail.
+  deny:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # master
+        with:
+          toolchain: stable
+      - uses: taiki-e/install-action@a4d3f3f761dcd95cce1b72cb61cb6d1963438177 # v2.87.30
+        with:
+          tool: cargo-deny@0.20.2
+      - run: cargo deny --locked check
+      - name: a dependency is refused
+        run: |
+          copy="$RUNNER_TEMP/with-a-dependency"
+          rm -rf "$copy" && mkdir -p "$copy" && git archive HEAD | tar -x -C "$copy"
+          sed -i '/^\[dependencies\]/a itoa = "=1.0.15"' "$copy/Cargo.toml"
+          (cd "$copy" && cargo generate-lockfile -q)
+          if (cd "$copy" && cargo deny check bans 2>&1 | tee deny.log); then
+            echo "::error::cargo deny accepted a dependency; bans.allow isn't doing its job"
+            exit 1
+          fi
+          grep -q itoa "$copy/deny.log" || { echo "::error::cargo deny failed, but not because of the dependency"; exit 1; }
+          echo "refused, as it should be"
+
   msrv:
     runs-on: ubuntu-latest
     steps:
