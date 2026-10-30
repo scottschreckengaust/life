@@ -96,7 +96,7 @@ pub fn duration(s: &str) -> Result<f64, String> {
                     ('H', true) => (3, 1.0),
                     ('M', true) => (4, 1.0 / 60.0),
                     ('S', true) => (5, 1.0 / 3600.0),
-                    ('Y', false) | ('M', false) => {
+                    ('Y' | 'M', false) => {
                         return Err(format!("`{s}`: years and months aren't fixed lengths; use days (P30D)"))
                     }
                     ('H' | 'S', false) => return Err(bad("hours, minutes and seconds go after T")),

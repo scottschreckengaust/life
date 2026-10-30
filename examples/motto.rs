@@ -9,7 +9,10 @@
 use spin_life::{join, rt, select};
 use std::{
     hint::spin_loop,
-    sync::atomic::{AtomicBool, AtomicU64, Ordering::*},
+    sync::atomic::{
+        AtomicBool, AtomicU64,
+        Ordering::{Acquire, Relaxed, Release},
+    },
     thread,
     time::Duration,
 };
@@ -28,7 +31,7 @@ fn main() {
 #[rustfmt::skip]
 async fn motto() {
     thread::spawn(|| loop { thread::sleep(EARTH_SPIN); ALARM.store(true, Release) });
-    loop { select! { biased; _ = geek() => {}, _ = people() => {}, _ = surf() => {} } join!(live(), eat()); ALARM.store(false, Relaxed); while !ALARM.load(Acquire) { dream(); spin_loop(); } }
+    loop { select! { biased; () = geek() => {}, () = people() => {}, () = surf() => {} } join!(live(), eat()); ALARM.store(false, Relaxed); while !ALARM.load(Acquire) { dream(); spin_loop(); } }
 }
 
 /// Polled first every morning (that's what `biased;` means), so it also wakes you up.

@@ -38,6 +38,7 @@ pub use rules::{Event, Pursuit, RuleError, Rules, Scenario, PRESETS};
 
 use std::{
     cell::{Cell, RefCell},
+    fmt::Write as _,
     future::pending,
     hint::spin_loop,
     sync::Arc,
@@ -56,7 +57,7 @@ pub fn hhmm(abs: f64) -> String {
     let (h, m, sec, frac) = (ms / 3_600_000, ms / 60_000 % 60, ms / 1000 % 60, ms % 1000);
     let mut out = format!("d{day} {h:02}:{m:02}");
     if sec > 0 || frac > 0 {
-        out += &format!(":{sec:02}");
+        let _ = write!(out, ":{sec:02}");
     }
     if frac > 0 {
         out += format!(".{frac:03}").trim_end_matches('0');
@@ -188,8 +189,9 @@ impl<'r> Life<'r> {
                     let p = &rules.pursuits[*pursuit];
                     let at = abs(day, *at);
                     let ends = until.map(|u| abs(day, u));
-                    let expires =
-                        ends.or(p.lasts.map(|l| at + l)).unwrap_or(abs(day, plan.bed).max(at + p.session));
+                    let expires = ends
+                        .or_else(|| p.lasts.map(|l| at + l))
+                        .unwrap_or_else(|| abs(day, plan.bed).max(at + p.session));
                     opps.push(Opportunity {
                         pursuit: *pursuit,
                         at,
@@ -207,7 +209,7 @@ impl<'r> Life<'r> {
                         rules.pursuits.iter().enumerate().filter(|(_, p)| p.on.as_ref() == Some(signal))
                     {
                         let at = abs(day, *at);
-                        let expires = p.lasts.map_or(abs(day, plan.bed), |l| at + l);
+                        let expires = p.lasts.map_or_else(|| abs(day, plan.bed), |l| at + l);
                         opps.push(Opportunity {
                             pursuit: i,
                             at,
@@ -228,7 +230,7 @@ impl<'r> Life<'r> {
                     plan.flight = Some((*departs, *lands));
                 }
                 Event::UpLate { until, pursuit, note, .. } => {
-                    plan.up_late = Some((*until, *pursuit, note.clone()))
+                    plan.up_late = Some((*until, *pursuit, note.clone()));
                 }
                 Event::Skip { pursuit, .. } => skips.push((day, *pursuit)),
             }
@@ -567,8 +569,8 @@ impl<'r> Life<'r> {
             // wins a tie on the same millisecond.
             select! {
                 biased;
-                _ = rt::sleep_until(at) => {},
-                _ = self.spend(Activity::Pursuit(p), end) => {},
+                () = rt::sleep_until(at) => {},
+                () = self.spend(Activity::Pursuit(p), end) => {},
             };
             let them = &self.rules.pursuits[self.opps.borrow()[q].pursuit].name;
             self.log(format!(
@@ -585,7 +587,7 @@ impl<'r> Life<'r> {
         let t0 = self.now();
         let wired = t0 < wired_until;
         let stop = if wired { (t0 + TICK).min(wired_until) } else { t0 + TICK };
-        select! { biased; _ = self.alarm.bell.heard() => {}, _ = rt::sleep_until(stop) => {} }
+        select! { biased; () = self.alarm.bell.heard() => {}, () = rt::sleep_until(stop) => {} }
         let t1 = self.now();
         if wired {
             return self.mark(Activity::Wired, t0, t1);

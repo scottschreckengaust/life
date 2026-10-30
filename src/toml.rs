@@ -13,7 +13,7 @@ pub enum Value {
     Int(i64),
     Float(f64),
     Bool(bool),
-    Array(Vec<Value>),
+    Array(Vec<Self>),
     Table(Table),
 }
 
@@ -38,12 +38,12 @@ impl std::error::Error for Error {}
 impl Value {
     pub fn kind(&self) -> &'static str {
         match self {
-            Value::Str(_) => "a string",
-            Value::Int(_) => "an integer",
-            Value::Float(_) => "a number",
-            Value::Bool(_) => "a boolean",
-            Value::Array(_) => "an array",
-            Value::Table(_) => "a table",
+            Self::Str(_) => "a string",
+            Self::Int(_) => "an integer",
+            Self::Float(_) => "a number",
+            Self::Bool(_) => "a boolean",
+            Self::Array(_) => "an array",
+            Self::Table(_) => "a table",
         }
     }
 }
