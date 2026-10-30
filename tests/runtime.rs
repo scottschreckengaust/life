@@ -22,7 +22,7 @@ fn virt<F: std::future::Future>(f: F) -> F::Output {
 #[test]
 fn biased_select_breaks_ties_top_down() {
     let won = virt(async {
-        select! { biased; _ = rt::sleep(1.0) => "geek", _ = rt::sleep(1.0) => "people", _ = rt::sleep(1.0) => "surf" }
+        select! { biased; () = rt::sleep(1.0) => "geek", () = rt::sleep(1.0) => "people", () = rt::sleep(1.0) => "surf" }
     });
     assert_eq!(won, "geek");
 }
@@ -30,7 +30,7 @@ fn biased_select_breaks_ties_top_down() {
 #[test]
 fn select_takes_whatever_finishes_first() {
     let won = virt(async {
-        select! { biased; _ = rt::sleep(2.0) => "geek", _ = rt::sleep(1.0) => "people", _ = pending::<()>() => "surf" }
+        select! { biased; () = rt::sleep(2.0) => "geek", () = rt::sleep(1.0) => "people", () = pending::<()>() => "surf" }
     });
     assert_eq!(won, "people");
 }
@@ -38,7 +38,7 @@ fn select_takes_whatever_finishes_first() {
 #[test]
 fn select_binds_patterns() {
     let sum = virt(async {
-        select! { (a, b) = async { (40, 2) } => a + b, _ = pending::<()>() => 0 }
+        select! { (a, b) = async { (40, 2) } => a + b, () = pending::<()>() => 0 }
     });
     assert_eq!(sum, 42);
 }
@@ -56,11 +56,11 @@ fn select_drops_the_losers_before_running_the_arm() {
         let flag = Flag(dropped.clone());
         async move {
             let _flag = flag;
-            pending::<()>().await
+            pending::<()>().await;
         }
     };
     let seen = virt(async {
-        select! { _ = loser => false, _ = rt::sleep(1.0) => dropped.get() }
+        select! { () = loser => false, () = rt::sleep(1.0) => dropped.get() }
     });
     assert!(seen, "the loser was still alive when the winning arm ran");
 }

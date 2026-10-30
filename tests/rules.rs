@@ -284,6 +284,7 @@ fn old_formats_point_to_iso() {
 
 #[test]
 fn toml_subset() {
+    use toml::Value::*;
     let t = toml::parse(
         r#"
         # comment
@@ -306,7 +307,6 @@ fn toml_subset() {
         "#,
     )
     .unwrap();
-    use toml::Value::*;
     assert_eq!(t["title"], Str("life".into()));
     assert_eq!(t["n"], Int(5));
     assert_eq!(t["x"], Float(-1.5));

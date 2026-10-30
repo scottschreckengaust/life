@@ -10,12 +10,12 @@ pub struct Why(u8);
 
 impl Why {
     /// The earth spun once.
-    pub const MORNING: Why = Why(1);
+    pub const MORNING: Self = Self(1);
     /// Something urgent that your rules let wake you: a party, a swell, a baby, a page.
-    pub const URGENT: Why = Why(2);
+    pub const URGENT: Self = Self(2);
 
     /// Does this include `other`?
-    pub fn has(self, other: Why) -> bool {
+    pub fn has(self, other: Self) -> bool {
         self.0 & other.0 != 0
     }
 }

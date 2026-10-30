@@ -1,0 +1,50 @@
+name: settings-check
+
+# Run by hand to prove two repository settings by behaviour, since reading them needs an
+# admin token no workflow has. Settings > Actions > General:
+#
+#   - Workflow permissions: "Read repository contents and packages permissions"
+#     Proved by default-token-check.yml, the one workflow without `permissions: {}` (a job
+#     only gets the repository default when nothing declares permissions).
+#   - "Allow GitHub Actions to create and approve pull requests" unticked
+#     A job granted pull-requests: write must still be refused when it opens a PR.
+#
+# The third #24 setting (approval for all external contributors' fork PRs) can't be probed
+# from here; it's checked by eye.
+
+on:
+  workflow_dispatch:
+
+permissions: {}
+
+# bash -eo pipefail, so a failure inside a pipeline fails the step (GitHub's default shell
+# has no pipefail). Enforced by .github/ci/check-workflows.sh.
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  no-actions-prs:
+    if: github.repository_owner == 'scottschreckengaust'
+    runs-on: ubuntu-latest
+    permissions:
+      pull-requests: write # granted, so only the repository setting can refuse it
+    steps:
+      - name: GitHub Actions can't open a pull request
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+        run: |
+          # main into main: if the setting allowed it, this would fail later on "no commits".
+          if out=$(gh api -X POST "repos/$REPO/pulls" -f head=main -f base=main -f title="settings-check" 2>&1); then
+            echo "::error::GitHub Actions opened a pull request: $out"
+            exit 1
+          fi
+          if grep -q 'not permitted to create or approve pull requests' <<<"$out"; then
+            echo "::notice::GitHub Actions can't create or approve pull requests"
+            echo "- ✅ GitHub Actions can't create or approve pull requests" >>"$GITHUB_STEP_SUMMARY"
+          else
+            echo "$out"
+            echo "::error::not refused by the setting: untick 'Allow GitHub Actions to create and approve pull requests'"
+            exit 1
+          fi

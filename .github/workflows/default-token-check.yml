@@ -1,0 +1,39 @@
+name: default-token-check
+
+# Run by hand to prove Settings > Actions > General > Workflow permissions is
+# "Read repository contents and packages permissions": a job that declares no permissions
+# gets the repository's default token, and a write with it must be refused.
+#
+# The one workflow in this repository without `permissions: {}` at the top, on purpose (a
+# job only gets the repository default when neither it nor its workflow declares
+# permissions). .github/ci/check-workflows.sh allows it by name; the CodeQL alert for it is
+# dismissed with this reason.
+
+on:
+  workflow_dispatch:
+
+# bash -eo pipefail, so a failure inside a pipeline fails the step (GitHub's default shell
+# has no pipefail). Enforced by .github/ci/check-workflows.sh.
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  default-token: # zizmor: ignore[excessive-permissions] must run with the repository's default token, which is what it tests
+    if: github.repository_owner == 'scottschreckengaust'
+    runs-on: ubuntu-latest
+    steps:
+      - name: the default token can't write
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          LABEL: settings-check-${{ github.run_id }}
+        run: |
+          if gh api -X POST "repos/$REPO/labels" -f name="$LABEL" -f color=ededed >/dev/null 2>err.txt; then
+            gh api -X DELETE "repos/$REPO/labels/$LABEL" || true
+            echo "::error::the default workflow token could create a label: set Workflow permissions to read-only"
+            exit 1
+          fi
+          grep -q 'Resource not accessible by integration' err.txt || { cat err.txt; echo "::error::refused, but not for lack of permission"; exit 1; }
+          echo "::notice::default workflow permissions are read-only"
+          echo "- ✅ default workflow token is read-only" >>"$GITHUB_STEP_SUMMARY"

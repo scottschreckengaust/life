@@ -2,6 +2,8 @@
 //!
 //! Output is compact and deterministic: the same journal always gives the same bytes.
 
+use std::fmt::Write;
+
 /// Write `s` as a quoted JSON string. Control characters are escaped; everything else,
 /// emoji included, is written as UTF-8.
 pub fn string(out: &mut String, s: &str) {
@@ -13,7 +15,9 @@ pub fn string(out: &mut String, s: &str) {
             '\n' => out.push_str("\\n"),
             '\r' => out.push_str("\\r"),
             '\t' => out.push_str("\\t"),
-            c if (c as u32) < 0x20 => out.push_str(&format!("\\u{:04x}", c as u32)),
+            c if (c as u32) < 0x20 => {
+                let _ = write!(out, "\\u{:04x}", c as u32);
+            }
             c => out.push(c),
         }
     }
@@ -25,7 +29,7 @@ pub fn number(out: &mut String, x: f64) {
     debug_assert!(x.is_finite(), "{x} isn't a JSON number");
     let x = if x.is_finite() { (x * 1000.0).round() / 1000.0 } else { 0.0 };
     // `+ 0.0` turns -0.0 into 0.0.
-    out.push_str(&format!("{}", x + 0.0));
+    let _ = write!(out, "{}", x + 0.0);
 }
 
 /// Writes `"key":` (with a leading comma when it isn't the first member) and hands back
@@ -138,7 +142,7 @@ mod tests {
         assert_eq!(n(2.0 / 3.0), "0.667");
         assert_eq!(n(-0.0), "0");
         assert_eq!(n(-0.0001), "0");
-        assert_eq!(n(86400000.0), "86400000");
+        assert_eq!(n(86_400_000.0), "86400000");
         assert_eq!(n(0.001), "0.001");
     }
 

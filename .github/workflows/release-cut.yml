@@ -139,8 +139,9 @@ jobs:
             exit 1
           fi
 
-          gh pr merge "$number" -R "$REPO" --squash --match-head-commit "$head"
-          sha=$(gh pr view "$number" -R "$REPO" --json mergeCommit -q .mergeCommit.oid)
+          # The REST merge, pinned to the head we checked. (gh pr merge goes through GraphQL,
+          # which only applies the release bot's ruleset bypass with --admin, so it was refused.)
+          sha=$(gh api -X PUT "repos/$REPO/pulls/$number/merge" -f merge_method=squash -f sha="$head" -q .sha)
           echo "### merged #$number after ${quiet} quiet minutes: $name $next at $sha; release.yml ships it" >>"$GITHUB_STEP_SUMMARY"
           # Backstop (the main ruleset's "up to date" rule should make this impossible): nothing
           # may have landed on main between the checks above and the merge.
