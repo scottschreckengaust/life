@@ -235,22 +235,30 @@ fn bad_values_say_what_they_should_be() {
 }
 
 #[test]
-fn durations_stay_within_a_day() {
-    // A session of billions of days used to pass `check` and then hang the run (its span
-    // ran far past the last day, and the timeline drew a row for every day of it).
-    rejects(
-        "[pursuit.a]\nsession = \"P99999999999D\"",
-        "pursuit.a.session: `P99999999999D` is longer than a day",
-    );
-    rejects("[pursuit.a]\nsession = \"PT25H\"", "is longer than a day (at most PT24H)");
-    rejects("[pursuit.a]\nlasts = \"P2D\"", "pursuit.a.lasts: `P2D` is longer than a day");
-    rejects("[pursuit.a]\nwhen = \"18:00/P2D\"", "pursuit.a.when: `18:00/P2D` is longer than a day");
-    rejects("[pursuit.a]\n[work]\nhours = \"09:00/PT25H\"", "work.hours: `09:00/PT25H` is longer than a day");
+fn long_durations_are_fine_but_daily_windows_fit_in_a_day() {
+    // Sessions, opportunities, meals and wired spells may be any finite length: a swell can
+    // stay up for days. A run cuts its record off at its own end (tests/scenarios.rs).
+    for v in ["PT24H", "PT25H", "P2D", "P30D", "P99999999999D"] {
+        Rules::parse(&format!("[pursuit.a]\nsession = \"{v}\"\nlasts = \"{v}\"")).unwrap();
+    }
+    // signal_after is a count of REM cycles: 4294967296 used to wrap round to 0 (an idea
+    // every night) and negatives became 0.
+    Rules::parse("[pursuit.a]\n[sleep]\nsignal_after = 4294967295").unwrap();
+    rejects("[pursuit.a]\n[sleep]\nsignal_after = 4294967296", "from 0 to 4294967295, not 4294967296");
+    rejects("[pursuit.a]\n[sleep]\nsignal_after = -3", "sleep.signal_after must be a whole number from 0");
+    // Only too large to be a number is refused.
     let huge = format!("PT{}H", "9".repeat(400));
-    rejects(&format!("[pursuit.a]\nsession = \"{huge}\""), "(too large)");
-    // A whole day is fine, as is a window that wraps past midnight.
-    Rules::parse("[pursuit.a]\nsession = \"PT24H\"\nwhen = \"22:00/06:00\"").unwrap();
-    Rules::parse("[pursuit.a]\nwhen = \"12:00/12:00\"").unwrap();
+    rejects(&format!("[pursuit.a]\nsession = \"{huge}\""), "pursuit.a.session");
+    rejects(&format!("[pursuit.a]\nlasts = \"{huge}\""), "(too large)");
+    // A window that repeats every day can't be longer than the day, or it would overlap its
+    // own next day. Exactly a day, and windows that wrap past midnight, are fine.
+    rejects("[pursuit.a]\nwhen = \"18:00/P2D\"", "pursuit.a.when: `18:00/P2D` is longer than a day");
+    rejects(
+        "[pursuit.a]\n[work]\nhours = \"09:00/PT24H0.001S\"",
+        "work.hours: `09:00/PT24H0.001S` is longer than a day",
+    );
+    Rules::parse("[pursuit.a]\nwhen = \"22:00/06:00\"").unwrap();
+    Rules::parse("[pursuit.a]\nwhen = \"12:00/12:00\"\n[work]\nhours = \"09:00/PT24H\"").unwrap();
 }
 
 #[test]

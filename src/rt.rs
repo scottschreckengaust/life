@@ -82,7 +82,10 @@ impl Exec {
     /// Where the wall clock says simulated time should be, for real-time runs.
     fn wall(&self, per_hour: Duration) -> u64 {
         let hours = self.started.get().elapsed().as_secs_f64() / per_hour.as_secs_f64();
-        self.origin.get() + (hours * MS_PER_HOUR) as u64
+        // An hour of zero wall-clock time makes `hours` infinite: saturate, so the clock is
+        // always past the next deadline (time travels, as in Mode::Virtual), instead of
+        // wrapping round and spinning forever.
+        self.origin.get().saturating_add((hours * MS_PER_HOUR) as u64)
     }
 
     fn waker(&self, id: usize) -> Waker {

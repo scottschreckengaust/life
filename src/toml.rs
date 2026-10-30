@@ -50,14 +50,20 @@ impl Value {
 
 /// Parse a document into its root table.
 pub fn parse(src: &str) -> Result<Table, Error> {
-    Parser { s: src.as_bytes(), i: 0, line: 1 }.document()
+    Parser { s: src.as_bytes(), i: 0, line: 1, depth: 0 }.document()
 }
 
 struct Parser<'a> {
     s: &'a [u8],
     i: usize,
     line: usize,
+    /// How many arrays and inline tables we're inside.
+    depth: usize,
 }
+
+/// Arrays and inline tables nest at most this deep. The parser recurses once per level, so
+/// without a limit a file of 100 000 `[`s overflowed the stack and aborted the process.
+const MAX_DEPTH: usize = 64;
 
 impl Parser<'_> {
     fn err<T>(&self, msg: impl Into<String>) -> Result<T, Error> {
@@ -218,13 +224,23 @@ impl Parser<'_> {
         match self.peek() {
             Some(b'"') => self.basic_string().map(Value::Str),
             Some(b'\'') => self.literal_string().map(Value::Str),
-            Some(b'[') => self.array(),
-            Some(b'{') => self.inline_table(),
+            Some(b'[' | b'{') if self.depth >= MAX_DEPTH => {
+                self.err(format!("arrays and inline tables nest at most {MAX_DEPTH} deep"))
+            }
+            Some(b'[') => self.nested(Self::array),
+            Some(b'{') => self.nested(Self::inline_table),
             Some(b't' | b'f') => self.boolean(),
             Some(c) if c.is_ascii_digit() || c == b'-' || c == b'+' => self.number(),
             Some(c) => self.err(format!("unexpected `{}` where a value should be", c as char)),
             None => self.err("missing value"),
         }
+    }
+
+    fn nested(&mut self, parse: fn(&mut Self) -> Result<Value, Error>) -> Result<Value, Error> {
+        self.depth += 1;
+        let v = parse(self);
+        self.depth -= 1;
+        v
     }
 
     fn basic_string(&mut self) -> Result<String, Error> {

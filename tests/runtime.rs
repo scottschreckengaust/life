@@ -245,3 +245,15 @@ fn real_time_waits_without_burning_a_core() {
     assert!(ticks < 15, "{ticks} ticks of CPU in {took:?}"); // ticks are 10 ms; spinning is ~50
     assert!(sleeps < 20, "went to sleep {sleeps} times in {took:?}");
 }
+
+#[test]
+fn an_hour_of_zero_wall_clock_time_is_virtual_time() {
+    // RealTime(ZERO) used to divide by zero, overflow the clock and spin forever.
+    let t = std::time::Instant::now();
+    let at = rt::block_on(rt::Mode::RealTime(std::time::Duration::ZERO), 0.0, async {
+        rt::sleep_until(1e6).await;
+        rt::now()
+    });
+    assert!((at - 1e6).abs() < 1e-6, "{at}");
+    assert!(t.elapsed().as_secs() < 5);
+}

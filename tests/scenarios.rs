@@ -437,3 +437,34 @@ fn life_stays_send_and_unwind_safe() {
     fn ok<T: Send + std::panic::UnwindSafe>() {}
     ok::<Life>();
 }
+
+#[test]
+fn nothing_is_recorded_past_the_end_of_a_run() {
+    // Every scenario of every preset, and a life whose sessions and opportunities outlast
+    // any run: no span or diary line may reach past the run's last morning, and the
+    // timeline has one row per day.
+    let mut lives: Vec<(Rules, String)> =
+        PRESETS.iter().map(|(name, ..)| (Rules::preset(name).unwrap(), name.to_string())).collect();
+    let src = Rules::preset_source("scott")
+        .unwrap()
+        .replace("session = \"PT2H\"", "session = \"P99999999999D\"")
+        .replace("lasts    = \"PT3H\"", "lasts    = \"P30D\"");
+    assert!(src.contains("P99999999999D") && src.contains("P30D"), "the preset changed; update this test");
+    lives.push((Rules::parse(&src).unwrap(), "endless sessions".into()));
+    for (rules, who) in &lives {
+        for scenario in &rules.scenarios {
+            let life = Life::new(rules, scenario);
+            let end = life.ends_at();
+            let j = life.run(Mode::Virtual);
+            let what = format!("{who} / {}", scenario.name);
+            for span in &j.spans {
+                assert!(span.end <= end + 1e-9, "{what}: {span:?} ends after the run ({end})");
+                // Spans that began after the end are dropped, not left empty or inside out.
+                assert!(span.end - span.start > 1e-9, "{what}: {span:?} is empty or reversed");
+            }
+            assert!(j.moments.iter().all(|m| m.at <= end + 1e-9), "{what}: a diary line after the run");
+            let rows = j.timeline().lines().filter(|l| l.starts_with("day ")).count();
+            assert!(rows <= j.days() + 1, "{what}: {rows} timeline rows for {} days", j.days());
+        }
+    }
+}

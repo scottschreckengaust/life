@@ -179,6 +179,17 @@ impl Journal {
         }
     }
 
+    /// End the record at `at` (absolute hours): spans are cut there, and anything after it
+    /// goes. A run calls this with its own end, so nothing it records, however long a
+    /// session or opportunity was, reaches past the run.
+    pub(crate) fn end_at(&mut self, at: f64) {
+        for s in &mut self.spans {
+            s.end = s.end.min(at);
+        }
+        self.spans.retain(|s| s.end - s.start > 1e-9);
+        self.moments.retain(|m| m.at <= at);
+    }
+
     /// Totals for day `day` (1-based).
     pub fn day(&self, day: usize) -> DaySummary {
         let all = self.activities();
@@ -330,5 +341,25 @@ impl Journal {
             self.moments.last().map_or_else(String::new, |m| hhmm(m.at)),
         );
         out
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn end_at_cuts_spans_and_drops_what_falls_after() {
+        let mut j = Journal::new(1, vec![], "idea".into());
+        let span = |start, end| Span { day: 1, what: Activity::Live, start, end };
+        j.spans = vec![span(0.0, 10.0), span(5.0, 20.0), span(15.0, 30.0), span(20.0, 30.0), span(0.0, 1e-9)];
+        j.moments =
+            vec![Moment { at: 15.0, note: "on time".into() }, Moment { at: 15.5, note: "late".into() }];
+        j.end_at(15.0);
+        // Cut at the end; a span starting at or after it is gone, not empty or inside out;
+        // so is one too short to count. A diary line exactly at the end stays.
+        assert_eq!(j.spans, vec![span(0.0, 10.0), span(5.0, 15.0)]);
+        assert_eq!(j.moments.len(), 1);
+        assert_eq!(j.moments[0].note, "on time");
     }
 }
