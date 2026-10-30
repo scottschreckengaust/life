@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.4](https://github.com/scottschreckengaust/life/compare/v0.2.3...v0.2.4) - 2026-10-30
+
+### Fixed
+
+- pages and coffee at odd minutes no longer hang the night or go unanswered ([#82](https://github.com/scottschreckengaust/life/pull/82))
+- long runs with many recurring windows no longer slow down day by day ([#81](https://github.com/scottschreckengaust/life/pull/81))
+- refuse durations too large to count in milliseconds ([#79](https://github.com/scottschreckengaust/life/pull/79))
+- a window can't start at 24:00 ([#70](https://github.com/scottschreckengaust/life/pull/70))
+
+### Other
+
+- scan release artifacts and the repository with ClamAV (report-only) ([#78](https://github.com/scottschreckengaust/life/pull/78))
+- AGENTS.md, the repository's rules as EARS requirements ([#74](https://github.com/scottschreckengaust/life/pull/74))
+- clippy ratchet stage 1, the mechanical lints ([#73](https://github.com/scottschreckengaust/life/pull/73))
+
 ## [0.2.3](https://github.com/scottschreckengaust/life/compare/v0.2.2...v0.2.3) - 2026-10-30
 
 ### Fixed
