@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.3](https://github.com/scottschreckengaust/life/compare/v0.2.2...v0.2.3) - 2026-10-30
+
+### Fixed
+
+- no input can hang or quietly bend a run: cut at run end, real limits only ([#62](https://github.com/scottschreckengaust/life/pull/62))
+- a life file's durations stay within a day, so an absurd one can't hang a run ([#59](https://github.com/scottschreckengaust/life/pull/59))
+
+### Other
+
+- cargo-deny, so a dependency can't land without changing deny.toml ([#58](https://github.com/scottschreckengaust/life/pull/58))
+- the README's fork notes match the workflows, and the ruleset list has signed commits ([#53](https://github.com/scottschreckengaust/life/pull/53))
+- OpenSSF Scorecard, and zizmor findings in code scanning ([#49](https://github.com/scottschreckengaust/life/pull/49))
+- SECURITY.md, with private vulnerability reporting ([#48](https://github.com/scottschreckengaust/life/pull/48))
+- the README describes the main rulesets and the tag rulesets as configured ([#46](https://github.com/scottschreckengaust/life/pull/46))
+- the release-bot App opens and merges the release PR ([#45](https://github.com/scottschreckengaust/life/pull/45))
+- show the motto in the README's rules example ([#43](https://github.com/scottschreckengaust/life/pull/43))
+
 ## [0.2.2](https://github.com/scottschreckengaust/life/compare/v0.2.1...v0.2.2) - 2026-10-29
 
 ### Fixed
