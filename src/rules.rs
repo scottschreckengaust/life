@@ -8,7 +8,7 @@
 //! * **signals** (`on`): things that start a pursuit, like an idea after a good night's sleep
 //! * **preempts**: who may interrupt whom, mid-`.await`
 //! * **protected**: who may never be interrupted
-//! * **woken_by**: what may ring your alarm at night
+//! * **`woken_by`**: what may ring your alarm at night
 //! * **caffeine**: when coffee turns sleep into a spin loop
 //!
 //! Times (`"06:30:02.5"`), durations (`"PT1H30M"`) and windows (`"18:00/20:00"`) are ISO 8601,
@@ -53,7 +53,7 @@ impl std::error::Error for RuleError {}
 
 impl From<toml::Error> for RuleError {
     fn from(e: toml::Error) -> Self {
-        RuleError(e.to_string())
+        Self(e.to_string())
     }
 }
 
@@ -193,13 +193,13 @@ pub enum Event {
 impl Event {
     pub fn day(&self) -> usize {
         match *self {
-            Event::Pursue { day, .. }
-            | Event::Signal { day, .. }
-            | Event::Coffee { day, .. }
-            | Event::WorkUntil { day, .. }
-            | Event::Flight { day, .. }
-            | Event::UpLate { day, .. }
-            | Event::Skip { day, .. } => day,
+            Self::Pursue { day, .. }
+            | Self::Signal { day, .. }
+            | Self::Coffee { day, .. }
+            | Self::WorkUntil { day, .. }
+            | Self::Flight { day, .. }
+            | Self::UpLate { day, .. }
+            | Self::Skip { day, .. } => day,
         }
     }
 }
@@ -222,7 +222,7 @@ pub struct Scenario {
 impl Scenario {
     /// `days` ordinary days starting on a Monday.
     pub fn plain(days: usize) -> Self {
-        Scenario {
+        Self {
             name: "plain".into(),
             about: format!("{days} ordinary day{}", if days == 1 { "" } else { "s" }),
             start: 0,
@@ -299,8 +299,7 @@ impl Rules {
             })
         };
 
-        let mut work = None;
-        if let Some(t) = root.table("work")? {
+        let work = if let Some(t) = root.table("work")? {
             let mut w = Fields::new("work", t);
             let days = match w.raw("days") {
                 Some(v) => days(&v, None, "work.days")?,
@@ -315,8 +314,10 @@ impl Rules {
             };
             let note = w.str("note")?.unwrap_or_else(|| "💼 work".into());
             w.done()?;
-            work = Some(Work { days, start, end, lunch, note });
-        }
+            Some(Work { days, start, end, lunch, note })
+        } else {
+            None
+        };
         let workdays = work.as_ref().map(|w| w.days);
 
         let mut pursuits = Vec::new();
@@ -378,20 +379,17 @@ impl Rules {
             }
             Ok(order)
         };
-        let (workday, weekend) = match root.table("priorities")? {
-            Some(t) => {
-                let mut p = Fields::new("priorities", t);
-                let all = p.strs("all")?;
-                let wd = p.strs("workday")?.or_else(|| all.clone());
-                let we = p.strs("weekend")?.or_else(|| wd.clone());
-                p.done()?;
-                let Some(wd) = wd else { return fail("[priorities] needs `workday` (or `all`)") };
-                (order(wd, "priorities.workday")?, order(we.unwrap_or_default(), "priorities.weekend")?)
-            }
-            None => {
-                let all: Vec<usize> = (0..pursuits.len()).collect();
-                (all.clone(), all)
-            }
+        let (workday, weekend) = if let Some(t) = root.table("priorities")? {
+            let mut p = Fields::new("priorities", t);
+            let all = p.strs("all")?;
+            let wd = p.strs("workday")?.or_else(|| all.clone());
+            let we = p.strs("weekend")?.or_else(|| wd.clone());
+            p.done()?;
+            let Some(wd) = wd else { return fail("[priorities] needs `workday` (or `all`)") };
+            (order(wd, "priorities.workday")?, order(we.unwrap_or_default(), "priorities.weekend")?)
+        } else {
+            let all: Vec<usize> = (0..pursuits.len()).collect();
+            (all.clone(), all)
         };
 
         let mut s = Fields::new("sleep", root.table("sleep")?.unwrap_or_default());
@@ -503,7 +501,7 @@ impl Rules {
             }
         }
         root.done()?;
-        Ok(Rules { name, motto, sleep, work, meals, caffeine, pursuits, workday, weekend, scenarios })
+        Ok(Self { name, motto, sleep, work, meals, caffeine, pursuits, workday, weekend, scenarios })
     }
 
     /// One of the built-in presets.
@@ -596,7 +594,7 @@ struct Fields {
 
 impl Fields {
     fn new(ctx: &str, t: Table) -> Self {
-        Fields { ctx: ctx.to_string(), t }
+        Self { ctx: ctx.to_string(), t }
     }
 
     fn key(&self, k: &str) -> String {
@@ -754,7 +752,7 @@ fn days(v: &Value, workdays: Option<Days>, ctx: &str) -> Result<Days> {
             (range, _) => match range.split_once('-') {
                 Some((a, b)) => match (weekday(a), weekday(b)) {
                     (Some(a), Some(b)) => {
-                        (0..7).filter(|d| (d + 7 - a) % 7 <= (b + 7 - a) % 7).for_each(|d| out[d] = true)
+                        (0..7).filter(|d| (d + 7 - a) % 7 <= (b + 7 - a) % 7).for_each(|d| out[d] = true);
                     }
                     _ => return fail(format!("{ctx}: `{range}` is not a day range like \"mon-fri\"")),
                 },

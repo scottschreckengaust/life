@@ -36,7 +36,7 @@ fn values() {
     assert_eq!(t["f"], Value::Bool(true));
     assert_eq!(t["g"], Value::Bool(false));
     assert_eq!(t["h"], Value::Array(vec![Value::Int(1), Value::Int(2)]));
-    assert_eq!(t["i"], Value::Table(Default::default()));
+    assert_eq!(t["i"], Value::Table(spin_life::toml::Table::default()));
 }
 
 #[test]
@@ -132,7 +132,7 @@ fn kinds() {
         Value::Float(0.0),
         Value::Bool(true),
         Value::Array(vec![]),
-        Value::Table(Default::default()),
+        Value::Table(spin_life::toml::Table::default()),
     ]
     .iter()
     .map(Value::kind)
