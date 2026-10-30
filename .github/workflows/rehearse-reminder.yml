@@ -5,9 +5,10 @@ name: rehearse-reminder
 # the pipeline does.
 #
 # Plain pull_request (not pull_request_target, which GitHub disables on public repos by
-# default from December 2026). A fork PR's token can't comment, so a fork gets the reminder
-# as a warning and in the run summary instead; the maintainer reviews those PRs anyway
-# (.github/ and Cargo.toml are code-owned).
+# default from December 2026). A fork PR's token can't comment, and neither can Dependabot's
+# (its weekly actions bump touches the release workflows), so those get the reminder as a
+# warning and in the run summary instead; the maintainer reviews those PRs anyway (.github/
+# and Cargo.toml are code-owned).
 
 on:
   pull_request:
@@ -42,7 +43,7 @@ jobs:
       GH_TOKEN: ${{ github.token }}
       REPO: ${{ github.repository }}
       PR: ${{ github.event.pull_request.number }}
-      FORK: ${{ github.event.pull_request.head.repo.full_name != github.repository }}
+      CAN_COMMENT: ${{ github.event.pull_request.head.repo.full_name == github.repository && github.actor != 'dependabot[bot]' }}
     steps:
       - name: comment once
         shell: bash # -o pipefail: a failed API call fails the step instead of looking like "nothing to do"
@@ -75,7 +76,7 @@ jobs:
 
           A rehearsal can't check the release-tagger App (run **release-cut** with \`check_tagger\`) or crates.io trusted
           publishing (only a real release proves it). See README › Releasing › Rehearsals."
-          if [[ "$FORK" == true ]]; then
+          if [[ "$CAN_COMMENT" != true ]]; then
             echo "::warning::this PR changes the release machinery; rehearse it before merging (see the run summary)"
             echo "$body" >>"$GITHUB_STEP_SUMMARY"
             exit 0
