@@ -153,21 +153,13 @@ jobs:
   # Run this workflow with check_tagger ticked (from main) to confirm the App, its key and the
   # environment are wired up before a real release depends on them.
   tagger-check:
-    if: inputs.check_tagger
+    # The maintainer only, checked before the job starts so nobody else's run even opens a
+    # deployment in `release` (it would be refused by the step-level check either way).
+    if: inputs.check_tagger && github.triggering_actor == 'scottschreckengaust'
     runs-on: ubuntu-latest
     environment: release
     permissions: {}
     steps:
-      # Anyone with write access can start a workflow by hand. Starting this one early, or with
-      # check_tagger, is the maintainer's call alone (the schedule needs no check).
-      - name: started by hand only by the maintainer
-        if: github.event_name == 'workflow_dispatch'
-        env:
-          ACTOR: ${{ github.triggering_actor }}
-        run: |
-          [[ "$ACTOR" == scottschreckengaust ]] && exit 0
-          echo "::error::only scottschreckengaust may run release-cut by hand (started by $ACTOR)"
-          exit 1
       - id: tagger
         name: release-tagger token (the only identity allowed to create v* tags)
         uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
