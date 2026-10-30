@@ -179,14 +179,19 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      # Installed by install-action, which checks the release's checksum (Scorecard flags
-      # piping a downloaded script into bash).
-      - uses: taiki-e/install-action@a4d3f3f761dcd95cce1b72cb61cb6d1963438177 # v2.87.30
-        with:
-          tool: actionlint@1.7.12
+      # The release archive, checked against a pinned SHA-256 (not a downloaded install
+      # script piped into bash, which Scorecard's Pinned-Dependencies flags). To bump: the
+      # new version's actionlint_<v>_checksums.txt, linux_amd64 line.
       - name: actionlint (findings show up as annotations on the PR)
+        env:
+          VERSION: "1.7.12"
+          SHA256: 8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8
         run: |
-          out=$(actionlint -oneline 2>&1) && exit 0
+          file="actionlint_${VERSION}_linux_amd64.tar.gz"
+          curl -fsSLo "$RUNNER_TEMP/$file" "https://github.com/rhysd/actionlint/releases/download/v$VERSION/$file"
+          echo "$SHA256  $RUNNER_TEMP/$file" | sha256sum -c -
+          tar -xzf "$RUNNER_TEMP/$file" -C "$RUNNER_TEMP" actionlint
+          out=$("$RUNNER_TEMP/actionlint" -oneline 2>&1) && exit 0
           echo "$out"
           while IFS= read -r line; do echo "::error::$line"; done <<<"$out"
           exit 1
