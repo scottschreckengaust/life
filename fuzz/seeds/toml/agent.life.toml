@@ -1,0 +1,68 @@
+# agent.life.toml: an AI agent's operating rhythm in the same terms.
+#
+#   work     = serving the queue
+#   eat      = loading context in the morning, writing memory at "dinner"
+#   sleep    = nightly memory compaction; enough of it produces an insight
+#   urgent   = a page; users preempt research and can wake the agent
+#
+# Simulate a week of load on virtual time before you deploy the policy.
+
+name  = "agent"
+motto = "loop { select! { biased; _ = users() => {}, _ = jobs() => {}, _ = research() => {} } join!(reflect(), persist()); compact().await; }"
+
+[priorities]
+all = ["users", "jobs", "research"]
+
+[pursuit.users]
+note     = "📨 user request"
+session  = "PT1H"
+lasts    = "PT30M"
+preempts = ["research", "jobs"]
+
+[pursuit.jobs]
+note = "🗂 scheduled jobs"
+when = "daily 17:00/18:00"
+
+[pursuit.research]
+note    = "🔬 research"
+on      = "insight"
+session = "PT3H"
+
+[work]
+days  = "daily"
+hours = "05:00/17:00"
+lunch = "none"
+note  = "📥 serving the queue"
+
+[meals]
+breakfast    = "PT15M"
+dinner       = "23:00"
+dinner_lasts = "PT30M"
+
+[sleep]
+wake         = "04:30"
+bed          = "00:30"
+rem_cycle    = "PT1H"
+signal_after = 3
+signal       = "insight"
+signal_note  = "✨ compaction surfaced an insight"
+woken_by     = ["users"]
+
+[caffeine]
+cutoff = "00:00"      # caffeine = burst rate limits; any burst delays compaction
+wired  = "PT3H"
+
+[scenario.steady]
+about = "a quiet week"
+days  = 7
+
+[scenario.incident]
+about  = "a 02:00 page, then a request storm that keeps preempting research"
+days   = 3
+events = [
+  { day = 2, at = "02:00", pursuit = "users", urgent = true, note = "🚨 paged" },
+  { day = 2, at = "18:00", signal = "insight" },
+  { day = 2, at = "18:30", pursuit = "users", urgent = true },
+  { day = 2, at = "20:00", pursuit = "users", urgent = true },
+  { day = 2, at = "21:30", coffee = 2 },
+]

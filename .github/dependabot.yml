@@ -15,6 +15,15 @@ updates:
     groups:
       actions:
         patterns: ["*"]
+  # The fuzz crate's dev-only dependencies (libfuzzer-sys and what it pulls in).
+  - package-ecosystem: cargo
+    directory: /fuzz
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 7
+    commit-message:
+      prefix: ci
   # Zero dependencies today; this is here so a future dependency gets watched too.
   - package-ecosystem: cargo
     directory: /

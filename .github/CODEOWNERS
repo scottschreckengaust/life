@@ -7,3 +7,4 @@
 /release-plz.toml  @scottschreckengaust
 /deny.toml         @scottschreckengaust
 /presets/          @scottschreckengaust
+/fuzz/             @scottschreckengaust
