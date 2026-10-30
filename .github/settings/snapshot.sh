@@ -8,7 +8,18 @@
 set -euo pipefail
 : "${REPO:?}"
 
-repo=$(gh api "repos/$REPO" --jq '{
+# gh api, but a refused read names itself (as an annotation in CI) instead of failing
+# silently somewhere in the middle.
+api() {
+  local out
+  if ! out=$(api "$@" 2>&1); then
+    echo "::error title=settings snapshot::can't read $1: $out" >&2
+    exit 1
+  fi
+  printf '%s\n' "$out"
+}
+
+repo=$(api "repos/$REPO" --jq '{
   visibility, allow_forking, has_wiki, has_projects, has_discussions,
   allow_squash_merge, allow_merge_commit, allow_rebase_merge, allow_auto_merge,
   allow_update_branch, delete_branch_on_merge, web_commit_signoff_required,
@@ -16,8 +27,8 @@ repo=$(gh api "repos/$REPO" --jq '{
 }')
 
 rulesets='[]'
-for id in $(gh api "repos/$REPO/rulesets" --jq '.[].id'); do
-  one=$(gh api "repos/$REPO/rulesets/$id" --jq '{
+for id in $(api "repos/$REPO/rulesets" --jq '.[].id'); do
+  one=$(api "repos/$REPO/rulesets/$id" --jq '{
     name, target, enforcement,
     conditions,
     rules: ([.rules[] | {type, parameters}] | sort_by(.type)),
@@ -29,9 +40,9 @@ rulesets=$(jq 'sort_by(.name)' <<<"$rulesets")
 
 # Immutable releases (Settings > General > Releases) applies from when it was turned on, so
 # the latest release shows whether it is on now.
-releases=$(gh api "repos/$REPO/releases/latest" --jq '{latest_immutable: .immutable}')
-pvr=$(gh api "repos/$REPO/private-vulnerability-reporting" --jq '{private_vulnerability_reporting: .enabled}')
-codeql=$(gh api "repos/$REPO/code-scanning/default-setup" --jq '{codeql_default_setup: .state}')
+releases=$(api "repos/$REPO/releases/latest" --jq '{latest_immutable: .immutable}')
+pvr=$(api "repos/$REPO/private-vulnerability-reporting" --jq '{private_vulnerability_reporting: .enabled}')
+codeql=$(api "repos/$REPO/code-scanning/default-setup" --jq '{codeql_default_setup: .state}')
 
 jq -n --argjson repo "$repo" --argjson rulesets "$rulesets" --argjson releases "$releases" \
   --argjson pvr "$pvr" --argjson codeql "$codeql" \
