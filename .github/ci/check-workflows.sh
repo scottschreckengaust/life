@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Every workflow starts from no token permissions and runs its steps under bash -eo
-# pipefail. GitHub's default shell is `bash -e` with no pipefail, so `a | b` there passes when `a` fails, which is how the
-# release plan once read a failed tag lookup as "no tag". Fails listing the offenders.
+# pipefail. GitHub's default shell is `bash -e` with no pipefail, so `a | b` there passes
+# when `a` fails, which is how the release plan once read a failed tag lookup as "no tag".
+# Fails listing the offenders.
 set -euo pipefail
 dir=${1:-.github/workflows}
 bad=0
