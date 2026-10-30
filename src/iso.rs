@@ -162,6 +162,9 @@ pub fn window(s: &str) -> Result<(f64, f64), String> {
         return Err(format!("`{s}` is not an ISO 8601 interval; {hint}"));
     };
     let start = time(a)?;
+    if start >= 24.0 {
+        return Err(format!("`{s}`: 24:00 is the end of a day, so a window can't start there; use 00:00"));
+    }
     let end = if b.trim_start().starts_with('P') {
         let d = duration(b)?;
         if d <= 0.0 {
@@ -297,5 +300,9 @@ mod tests {
         assert!(window("9:00/17:00").unwrap_err().contains("time of day"));
         assert!(window("09:00/8h").unwrap_err().contains("time of day"));
         assert!(window("18:00").unwrap_err().contains("like 18:00/20:00 or 09:00/PT8H"));
+        // Found by fuzzing (#55): it parsed as an empty window, 24.0..24.0.
+        assert!(window("24:00/00:00").unwrap_err().contains("can't start there; use 00:00"));
+        assert!(window("24:00/PT1H").unwrap_err().contains("can't start there"));
+        assert_eq!(window("00:00/24:00"), Ok((0.0, 24.0)));
     }
 }
