@@ -35,11 +35,7 @@ fn closed(e: std::io::Error) -> ! {
 /// A closed pipe (`spin-life | head`) is a normal way to stop: exit 0. On Unix the restored
 /// SIGPIPE usually ends us first; on Windows this is how it ends. Anything else is an error.
 fn write_failure_exit_code(e: &std::io::Error) -> i32 {
-    if e.kind() == std::io::ErrorKind::BrokenPipe {
-        0
-    } else {
-        1
-    }
+    i32::from(e.kind() != std::io::ErrorKind::BrokenPipe)
 }
 
 /// Rust ignores SIGPIPE, which turns a closed pipe into write errors. Restore the default,
@@ -175,15 +171,17 @@ fn run(a: &Args) {
             rules.scenarios.iter().for_each(|s| eprintln!("  {}", s.name));
             exit(2)
         }),
-        (None, None) => {
-            rules.scenario("week").or(rules.scenarios.first()).cloned().unwrap_or_else(|| Scenario::plain(7))
-        }
+        (None, None) => rules
+            .scenario("week")
+            .or_else(|| rules.scenarios.first())
+            .cloned()
+            .unwrap_or_else(|| Scenario::plain(7)),
     };
     // The window: flags override the scenario's own.
     let life = Life::new(&rules, &scenario);
     let (start, end) = (life.starts_at(), life.ends_at());
     let from = a.from.or(scenario.from);
-    let until = a.until.or(a.lasts.map(|d| from.unwrap_or(start) + d)).or(scenario.until);
+    let until = a.until.or_else(|| a.lasts.map(|d| from.unwrap_or(start) + d)).or(scenario.until);
     if from.is_some_and(|f| f < start - 1e-9) {
         fail(&format!("--from is before the first alarm ({})", hhmm(start)))
     }
@@ -326,16 +324,16 @@ fn parse_args() -> Args {
             "-q" | "--quiet" => a.quiet = true,
             "--from" => {
                 a.from =
-                    Some(iso::when(&value(&arg, &mut it)).unwrap_or_else(|e| fail(&format!("--from: {e}"))))
+                    Some(iso::when(&value(&arg, &mut it)).unwrap_or_else(|e| fail(&format!("--from: {e}"))));
             }
             "--until" => {
                 a.until =
-                    Some(iso::when(&value(&arg, &mut it)).unwrap_or_else(|e| fail(&format!("--until: {e}"))))
+                    Some(iso::when(&value(&arg, &mut it)).unwrap_or_else(|e| fail(&format!("--until: {e}"))));
             }
             "--for" => {
                 a.lasts = Some(
                     iso::duration(&value(&arg, &mut it)).unwrap_or_else(|e| fail(&format!("--for: {e}"))),
-                )
+                );
             }
             "-L" | "--life" => a.life = Some(value(&arg, &mut it)),
             "-p" | "--preset" => a.preset = Some(value(&arg, &mut it)),
@@ -343,7 +341,7 @@ fn parse_args() -> Args {
                 a.days = Some(match value(&arg, &mut it).parse() {
                     Ok(n @ 1..=366) => n,
                     _ => fail("--days needs a whole number from 1 to 366"),
-                })
+                });
             }
             "-x" | "--speed-up" => {
                 let v = value(&arg, &mut it);
@@ -358,7 +356,7 @@ fn parse_args() -> Args {
             "-s" | "--scale" => fail("--scale is gone: use --speed-up N (--scale S was --speed-up 3600/S)"),
             s if s.starts_with('-') => fail(&format!("unknown option `{s}`")),
             "run" | "list" | "presets" | "init" | "check" if a.cmd.is_none() && a.target.is_none() => {
-                a.cmd = Some(arg)
+                a.cmd = Some(arg);
             }
             _ if a.target.is_none() => a.target = Some(arg),
             _ => fail(&format!("unexpected argument `{arg}`")),
