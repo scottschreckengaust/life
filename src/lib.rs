@@ -51,6 +51,7 @@ const TICK: f64 = 0.25;
 
 /// `"d3 07:30"` for an absolute simulated hour, with seconds only when there are some:
 /// `"d1 06:30:15"`, `"d1 06:30:02.5"` (to the millisecond).
+#[must_use]
 pub fn hhmm(abs: f64) -> String {
     let ms = (abs * 3_600_000.0).round().max(0.0) as u64;
     let (day, ms) = (ms / 86_400_000 + 1, ms % 86_400_000);
@@ -226,6 +227,7 @@ fn abs(day: usize, hour: f64) -> f64 {
 }
 
 impl<'r> Life<'r> {
+    #[must_use]
     pub fn new(rules: &'r Rules, scenario: &Scenario) -> Self {
         let n = scenario.days;
         let mut plans: Vec<Plan> = (0..=n)
@@ -359,6 +361,7 @@ impl<'r> Life<'r> {
     }
 
     /// Print the diary to stdout as it happens.
+    #[must_use]
     pub fn echo(self, on: bool) -> Self {
         if on {
             self.echo_to(std::io::stdout())
@@ -370,6 +373,7 @@ impl<'r> Life<'r> {
 
     /// Write the diary to `out` as it happens, one line per entry. If a write fails (a closed
     /// pipe, a full disk), the echo stops; the journal still has everything.
+    #[must_use]
     pub fn echo_to(self, out: impl std::io::Write + Send + 'static) -> Self {
         *self.echo.0.borrow_mut() = Some(std::panic::AssertUnwindSafe(Box::new(out)));
         self
@@ -391,6 +395,7 @@ impl<'r> Life<'r> {
     ///
     /// # Panics
     /// If the window is empty or reaches outside the run.
+    #[must_use]
     pub fn window(mut self, from: Option<f64>, until: Option<f64>) -> Self {
         let (start, end) = (self.starts_at(), self.ends_at());
         let (f, u) = (from.unwrap_or(start), until.unwrap_or(end));

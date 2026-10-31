@@ -12,11 +12,18 @@
 const MS_PER_HOUR: f64 = 3_600_000.0;
 
 /// Round hours to the nearest millisecond.
+#[must_use]
 pub fn round_ms(hours: f64) -> f64 {
     (hours * MS_PER_HOUR).round() / MS_PER_HOUR
 }
 
 /// A time of day, `hh:mm[:ss[.fff]]`, as hours after midnight. `24:00` is the end of the day.
+///
+/// # Errors
+/// If `s` isn't one; the message says why and shows a valid example.
+///
+/// # Panics
+/// Never: both fields are checked to be digits before they're parsed.
 pub fn time(s: &str) -> Result<f64, String> {
     let s = s.trim();
     let bad =
@@ -70,6 +77,12 @@ pub fn time(s: &str) -> Result<f64, String> {
 
 /// An ISO 8601 duration, `P[nD][T[nH][nM][nS]]` or `PnW`, as hours. Only the last component
 /// may have a fraction.
+///
+/// # Errors
+/// If `s` isn't one; the message says why and shows a valid example., or if it's too large to count in milliseconds.
+///
+/// # Panics
+/// Never: each number is checked to be digits with at most one point before it's parsed.
 pub fn duration(s: &str) -> Result<f64, String> {
     let s = s.trim();
     let hint = "use one like PT1H30M, PT2.5S or P1DT6H";
@@ -144,6 +157,9 @@ pub fn duration(s: &str) -> Result<f64, String> {
 
 /// A point in a run, as absolute hours since midnight at the start of day 1: a time of day
 /// (on day 1, `06:30:00`) or a duration from that midnight (`P1DT18H` is day 2 at 18:00).
+///
+/// # Errors
+/// If `s` isn't one; the message says why and shows a valid example.
 pub fn when(s: &str) -> Result<f64, String> {
     if s.trim_start().starts_with('P') {
         duration(s)
@@ -154,6 +170,9 @@ pub fn when(s: &str) -> Result<f64, String> {
 
 /// An ISO 8601 interval of times of day, `start/end` or `start/duration`, as `(start, end)`
 /// hours. An end at or before the start crosses midnight.
+///
+/// # Errors
+/// If `s` isn't one; the message says why and shows a valid example.
 pub fn window(s: &str) -> Result<(f64, f64), String> {
     let s = s.trim();
     let Some((a, b)) = s.split_once('/') else {
