@@ -3,7 +3,7 @@ name: release
 # A version bump on main becomes a release, one gate at a time:
 #
 #   plan     Is Cargo.toml's version unreleased? (no *published* GitHub Release for it)
-#   draft    Tag this exact commit, then a DRAFT GitHub Release on that tag, with the
+#   draft    (environment `tag`, no reviewer) Tag this exact commit, then a DRAFT GitHub Release on that tag, with the
 #            CHANGELOG.md section as its notes. Tagging first means later merges to main
 #            can't affect this release.
 #   build    Binaries for 4 targets (static on Linux), each with a .sha256 and signed build provenance,
@@ -85,10 +85,12 @@ jobs:
     needs: plan
     if: needs.plan.outputs.go == 'true'
     runs-on: ubuntu-latest
-    # Real releases run in `release`, the only environment holding the release-tagger App's
-    # key (and the one crates.io trusts); it only deploys from main and v* tags. Rehearsals
-    # get no environment: they tag rehearsal/... with the built-in token.
-    environment: ${{ needs.plan.outputs.rehearsal != 'true' && 'release' || '' }}
+    # Real releases tag in `tag`, the only environment holding the release-tagger App's key.
+    # It has no reviewer: a tag and a private draft are harmless and a re-run reuses them, so
+    # the one approval is at `publish`, the step that can't be undone (#72). Like `release`,
+    # it only deploys from main and v* tags. Rehearsals get no environment: they tag
+    # rehearsal/... with the built-in token.
+    environment: ${{ needs.plan.outputs.rehearsal != 'true' && 'tag' || '' }}
     permissions:
       contents: write
     steps:
@@ -347,8 +349,10 @@ jobs:
   publish:
     needs: [plan, crate, test, scan]
     runs-on: ubuntu-latest
-    # Must match the environment on crates.io's trusted publisher. Rehearsals only dry-run,
-    # so they need no environment (and required reviewers on `release` never block them).
+    # Must match the environment on crates.io's trusted publisher. `release` has the required
+    # reviewer, so this is the release's one approval: by now every build is attested and
+    # tested from the draft, and the ClamAV scan is in the run summary. Rehearsals only
+    # dry-run, so they need no environment (and the reviewer never blocks them).
     environment: ${{ needs.plan.outputs.rehearsal != 'true' && 'release' || '' }}
     permissions:
       contents: read

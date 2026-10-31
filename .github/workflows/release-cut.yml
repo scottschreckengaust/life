@@ -155,10 +155,10 @@ jobs:
   # environment are wired up before a real release depends on them.
   tagger-check:
     # The maintainer only, checked before the job starts so nobody else's run even opens a
-    # deployment in `release` (it would be refused by the step-level check either way).
+    # deployment in `tag` (it would be refused by the step-level check either way).
     if: inputs.check_tagger && github.triggering_actor == 'scottschreckengaust'
     runs-on: ubuntu-latest
-    environment: release
+    environment: tag
     permissions: {}
     steps:
       - id: tagger
