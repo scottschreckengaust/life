@@ -36,7 +36,8 @@ impl fmt::Display for Error {
 impl std::error::Error for Error {}
 
 impl Value {
-    pub fn kind(&self) -> &'static str {
+    #[must_use]
+    pub const fn kind(&self) -> &'static str {
         match self {
             Self::Str(_) => "a string",
             Self::Int(_) => "an integer",
@@ -49,6 +50,9 @@ impl Value {
 }
 
 /// Parse a document into its root table.
+///
+/// # Errors
+/// At the first thing that isn't TOML this parser supports, with its line.
 pub fn parse(src: &str) -> Result<Table, Error> {
     Parser { s: src.as_bytes(), i: 0, line: 1, depth: 0 }.document()
 }
