@@ -1,0 +1,99 @@
+name: changelog-config
+
+# release-plz.toml's [changelog] restates release-plz's defaults so it can hold per-release
+# corrections (#75). This proves the restatement is exact: for each of the last three
+# releases, regenerate its changelog from the commit before its release PR merged, with the
+# [changelog] section (minus its corrections, see .github/ci/changelog-defaults.py) and
+# without it, and require the two to be byte-identical. A control config must come out
+# different. The run summary previews the next release's changelog *with* the corrections,
+# for review. Runs whenever release-plz.toml changes.
+
+on:
+  pull_request:
+    paths: [release-plz.toml, .github/workflows/changelog-config.yml]
+  workflow_dispatch:
+
+permissions: {}
+
+defaults:
+  run:
+    shell: bash
+
+env:
+  # What release-plz/action (release-plz.yml's pin) installs by default.
+  RELEASE_PLZ: "0.4.0"
+
+jobs:
+  same-changelog:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+          fetch-tags: true
+      - name: Install cargo-binstall
+        uses: cargo-bins/cargo-binstall@8a2045612414e945291083f820cd50b4d8fc2218 # v1.26.0
+        env:
+          BINSTALL_VERSION: 1.26.0
+      - name: Install release-plz
+        run: cargo-binstall "release-plz@$RELEASE_PLZ" --force --strategies=crate-meta-data,compile --no-confirm
+      - name: regenerate the last three releases, with and without [changelog]
+        env:
+          REPO_URL: https://github.com/${{ github.repository }}
+        run: |
+          mkdir -p "$RUNNER_TEMP/out"
+          # without: the file minus its [changelog] table, so release-plz uses its own defaults.
+          awk '/^\[changelog\]/{skip=1; next} /^\[/{skip=0} !skip' release-plz.toml > "$RUNNER_TEMP/without.toml"
+          # with: [changelog] as written, minus its corrections (parsers naming a `sha`, and
+          # every commit_preprocessor but the PR-link rewrite). Corrections are meant to change
+          # a changelog, and once released they would change a past one; the rest must not.
+          python3 .github/ci/changelog-defaults.py release-plz.toml "$RUNNER_TEMP/without.toml" > "$RUNNER_TEMP/with.toml"
+          # A control that must come out different, or the comparison proves nothing (say, if
+          # release-plz generated no section at all): file every commit under "other".
+          { cat "$RUNNER_TEMP/without.toml"; printf '\n[changelog]\ncommit_parsers = [{ message = ".*", group = "other" }]\n'; } > "$RUNNER_TEMP/control.toml"
+          fail=0
+          newest=$(git tag -l 'v*' --sort=-v:refname | head -n 1)
+          for tag in $(git tag -l 'v*' --sort=-v:refname | head -n 3); do
+            # A release commit is the squash of its release PR: its parent is main just before.
+            base=$(git rev-parse "$tag^1")
+            variants="with without"; [[ $tag == "$newest" ]] && variants+=" control"
+            for variant in $variants; do
+              wt="$RUNNER_TEMP/wt-$tag-$variant"
+              git worktree add -q --detach "$wt" "$base"
+              cp "$RUNNER_TEMP/$variant.toml" "$wt/release-plz.toml"
+              (cd "$wt" && release-plz update --allow-dirty --config release-plz.toml \
+                --release-date 2000-01-01 --repo-url "$REPO_URL" >/dev/null)
+              cp "$wt/CHANGELOG.md" "$RUNNER_TEMP/out/$tag-$variant.md"
+              git worktree remove --force "$wt"
+            done
+            if diff -u "$RUNNER_TEMP/out/$tag-without.md" "$RUNNER_TEMP/out/$tag-with.md" > "$RUNNER_TEMP/out/$tag.diff"; then
+              echo "$tag: identical ($(wc -l < "$RUNNER_TEMP/out/$tag-with.md") lines)"
+            else
+              fail=1
+              echo "::error title=changelog-config ($tag)::[changelog] changes this release's changelog:%0A$(sed 's/%/%25/g' "$RUNNER_TEMP/out/$tag.diff" | head -n 60 | awk '{printf "%s%%0A", $0}')"
+            fi
+          done
+          if cmp -s "$RUNNER_TEMP/out/$newest-without.md" "$RUNNER_TEMP/out/$newest-control.md"; then
+            fail=1
+            echo "::error title=changelog-config::the control config gave the same changelog for $newest, so this check can't tell configs apart"
+          else
+            echo "control: a different config does change $newest's changelog, so the comparison is meaningful"
+          fi
+          exit "$fail"
+      - name: preview the next release's changelog, with the corrections
+        if: always()
+        env:
+          REPO_URL: https://github.com/${{ github.repository }}
+        run: |
+          release-plz update --allow-dirty --config release-plz.toml --repo-url "$REPO_URL" >/dev/null
+          {
+            echo "### Next release, as release-plz would write it"
+            echo '```markdown'
+            # The section release-plz just added: from the first "## [" to the next one.
+            awk '/^## \[/{n++} n==1' CHANGELOG.md
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"

@@ -11,3 +11,34 @@ git_tag_enable = false
 git_release_enable = false
 publish = false
 pr_labels = ["release"]
+
+# The changelog, correctable in review instead of by hand in the release PR (#75).
+#
+# release-plz 0.4.0 (what release-plz/action v0.5.145 installs) fills in its defaults for
+# every field left out here, and for an empty list. A non-empty list *replaces* its default
+# instead, so `commit_parsers` restates the Keep a Changelog default after the corrections.
+# `changelog-config` (.github/workflows/changelog-config.yml) proves the restated defaults
+# are exact, regenerating the last three releases with and without them, and previews the
+# next release's changelog with the corrections in its run summary.
+[changelog]
+commit_parsers = [
+  # ---- Corrections for commits that haven't been released yet. The first match wins.
+  # Drop a superseded change's line (the full SHA of its squash commit on main):
+  #   { sha = "0123456789abcdef0123456789abcdef01234567", skip = true },
+  # Reword one, keeping its group: match its exact title, then the group's parser below
+  # still files it. To change the words themselves, add a `commit_preprocessors` list,
+  # and restate release-plz's PR-link rewrite in it, since a non-empty list replaces it:
+  #   commit_preprocessors = [
+  #     { pattern = '^fix: the old wording \(#59\)$', replace = "fix: the right wording (#59)" },
+  #     { pattern = '\(#([0-9]+)\)', replace = "([#${1}](https://github.com/scottschreckengaust/life/pull/${1}))" },
+  #   ]
+  #
+  # ---- release-plz 0.4.0's defaults, unchanged (Keep a Changelog groups).
+  { message = "^feat", group = "added" },
+  { message = "^changed", group = "changed" },
+  { message = "^deprecated", group = "deprecated" },
+  { message = "^removed", group = "removed" },
+  { message = "^fix", group = "fixed" },
+  { message = "^security", group = "security" },
+  { message = ".*", group = "other" },
+]
