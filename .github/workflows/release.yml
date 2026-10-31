@@ -11,8 +11,8 @@ name: release
 #   crate    The .crate file crates.io will receive, with a .sha256 and provenance.
 #   test     On each OS, download the draft's assets (not the build outputs), verify the
 #            checksum and provenance, then run the binary against tests/golden.
-#   scan     ClamAV over every asset in the draft, archives and unpacked. Report-only (#60):
-#            read its summary before approving `release`.
+#   scan     ClamAV over every asset in the draft, archives and unpacked, after proving it
+#            detects its own test files. A finding stops the release (#60).
 #   publish  cargo publish with crates.io trusted publishing, only after checking that the
 #            bytes it uploads are the attested .crate.
 #   verify   crates.io's index checksum and served .crate match the attested bytes,
@@ -312,13 +312,12 @@ jobs:
           .github/release/smoke.sh "dl/spin-life$exe" "$VERSION" tests/golden
 
   scan:
-    name: scan (ClamAV, report-only)
+    name: scan (ClamAV)
     needs: [plan, build, crate]
     runs-on: ubuntu-latest
-    # Report-only (#60): findings are annotations and a summary, never a failed release. Even
-    # if the scanner itself breaks, `publish` still runs; its result is there to read before
-    # approving the `release` environment.
-    continue-on-error: true
+    # Blocking (#60): a finding stops the release before `publish`, unless it's a confirmed
+    # false positive listed in .github/ci/clamav-allow.txt. Each run first proves ClamAV can
+    # see its own test files, so a clean result means something.
     timeout-minutes: 15
     permissions:
       contents: write # reading a *draft* release needs push access

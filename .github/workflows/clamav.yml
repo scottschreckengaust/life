@@ -1,7 +1,12 @@
 name: clamav
 
-# A weekly ClamAV scan of the repository tree (#60). Report-only: findings are annotations
-# and a run summary. The release artifacts are scanned in release.yml's `scan` job.
+# ClamAV (#60), weekly and on PRs that change the scanner:
+#   tree    scan the repository tree; a finding fails the run.
+#   blocks  prove clamscan.sh does what release.yml relies on: clean passes, a detection
+#           fails, and a listed false positive passes. The detection is one of ClamAV's own
+#           harmless test files (clamav-testfiles), copied in at run time, so no test virus is
+#           ever in this repository or its history.
+# The release artifacts are scanned in release.yml's `scan` job.
 
 on:
   schedule:
@@ -28,3 +33,42 @@ jobs:
           persist-credentials: false
       - name: scan
         run: .github/ci/clamscan.sh "repository tree" .
+
+  blocks:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          sparse-checkout: .github/ci
+      - name: a clean directory passes
+        run: |
+          mkdir -p "$RUNNER_TEMP/clean" && echo "nothing to see" > "$RUNNER_TEMP/clean/readme.txt"
+          .github/ci/clamscan.sh "clean" "$RUNNER_TEMP/clean"
+      - name: a detection fails the scan
+        run: |
+          # Any test file ClamAV detects, found by scanning rather than by a hard-coded name.
+          hit=$(clamscan --recursive --infected --no-summary /usr/share/clamav-testfiles | grep -m1 ' FOUND$' || true)
+          [[ -n $hit ]] || { echo "::error::ClamAV found none of its test files"; exit 1; }
+          file=${hit%: * FOUND}; sig=${hit%" FOUND"}; sig=${sig##*: }
+          mkdir -p "$RUNNER_TEMP/finding" && cp "$file" "$RUNNER_TEMP/finding/"
+          echo "SIG=$sig" >> "$GITHUB_ENV"
+          echo "SUM=$(sha256sum "$file" | cut -d' ' -f1)" >> "$GITHUB_ENV"
+          if .github/ci/clamscan.sh "finding" "$RUNNER_TEMP/finding"; then
+            echo "::error::clamscan.sh passed a directory holding a detection ($sig)"
+            exit 1
+          fi
+          echo "::notice::a detection ($sig) failed the scan, as it should"
+      - name: a listed false positive passes, but only for that file and signature
+        run: |
+          printf '%s %s test file, allowed by this check\n' "$SUM" "$SIG" > "$RUNNER_TEMP/allow.txt"
+          CLAMAV_ALLOW="$RUNNER_TEMP/allow.txt" .github/ci/clamscan.sh "allowed" "$RUNNER_TEMP/finding"
+          printf '%s %s right file, wrong signature\n' "$SUM" "Not.$SIG" > "$RUNNER_TEMP/wrong.txt"
+          if CLAMAV_ALLOW="$RUNNER_TEMP/wrong.txt" .github/ci/clamscan.sh "wrong signature" "$RUNNER_TEMP/finding"; then
+            echo "::error::an allow entry with the wrong signature let a detection through"
+            exit 1
+          fi
+          echo "::notice::only an exact (sha256, signature) entry allows a finding"

@@ -1,0 +1,8 @@
+# Confirmed ClamAV false positives, one per line:
+#
+#   <sha256 of the file> <signature, exactly as ClamAV names it> <why it's safe, and a link>
+#
+# Both must match: the same signature on a different file, or a different signature on this
+# file, still fails. Check a suspect file on VirusTotal and report the false positive to
+# ClamAV (https://www.clamav.net/reports/fp) before adding it. Code-owned (.github/), so
+# every entry is reviewed.
