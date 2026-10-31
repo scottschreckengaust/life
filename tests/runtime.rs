@@ -81,7 +81,10 @@ fn join_waits_for_everyone() {
         (out, rt::now())
     });
     assert_eq!(out, ("eat", "live"));
-    assert_eq!(at, 3.0);
+    #[allow(clippy::float_cmp)] // the clock is in whole milliseconds: 3 h is exact
+    {
+        assert_eq!(at, 3.0);
+    }
 }
 
 #[test]
@@ -91,7 +94,10 @@ fn virtual_time_skips_the_boring_parts() {
         rt::sleep(24.0 * 365.0 * 100.0).await; // a century
         rt::now()
     });
-    assert_eq!(now, 876_000.0);
+    #[allow(clippy::float_cmp)] // a whole number of hours: exact
+    {
+        assert_eq!(now, 876_000.0);
+    }
     assert!(wall.elapsed() < Duration::from_secs(1));
 }
 

@@ -82,7 +82,10 @@ fn the_earth_spins_once_per_alarm() {
         j.moments.iter().filter(|m| m.note.starts_with("⏰ alarm")).map(|m| m.at).collect();
     assert_eq!(alarms.len(), 7);
     assert!(alarms.windows(2).all(|w| w[1] > w[0]));
-    assert_eq!(alarms[0], 24.0 + 6.5, "Tuesday 06:30");
+    #[allow(clippy::float_cmp)] // 30.5 h is an exact binary fraction
+    {
+        assert_eq!(alarms[0], 24.0 + 6.5, "Tuesday 06:30");
+    }
 }
 
 #[test]

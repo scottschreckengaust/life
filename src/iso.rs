@@ -129,7 +129,7 @@ pub fn duration(s: &str) -> Result<f64, String> {
                     return Err(bad(&format!("`{c}` needs a number before it")));
                 }
                 fraction_seen = num.contains('.');
-                total += num.parse::<f64>().unwrap() * hours;
+                total = num.parse::<f64>().unwrap().mul_add(hours, total);
                 last_order = order;
                 num.clear();
                 any = true;
@@ -216,10 +216,10 @@ mod tests {
     #[test]
     fn times() {
         close(time("06:30").unwrap(), 6.5);
-        close(time("06:30:15").unwrap(), 6.5 + 15.0 * S);
-        close(time("06:30:02.5").unwrap(), 6.5 + 2.5 * S);
-        close(time("06:30:02,5").unwrap(), 6.5 + 2.5 * S);
-        close(time("23:59:59.999").unwrap(), 24.0 - 0.001 * S);
+        close(time("06:30:15").unwrap(), 15.0f64.mul_add(S, 6.5));
+        close(time("06:30:02.5").unwrap(), 2.5f64.mul_add(S, 6.5));
+        close(time("06:30:02,5").unwrap(), 2.5f64.mul_add(S, 6.5));
+        close(time("23:59:59.999").unwrap(), 0.001f64.mul_add(-S, 24.0));
         close(time("00:00:00.123456789").unwrap(), 0.123 * S); // up to 9 digits, rounded to the ms
         close(time("00:00").unwrap(), 0.0);
         close(time("24:00").unwrap(), 24.0);
@@ -301,7 +301,7 @@ mod tests {
     fn whens() {
         close(when("06:30").unwrap(), 6.5);
         close(when("P1DT18H").unwrap(), 42.0);
-        close(when("PT6H30M2.5S").unwrap(), 6.5 + 2.5 * S);
+        close(when("PT6H30M2.5S").unwrap(), 2.5f64.mul_add(S, 6.5));
         assert!(when("d2 18:00").unwrap_err().contains("P1DT18H"));
     }
 

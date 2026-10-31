@@ -372,6 +372,8 @@ fn fail(msg: &str) -> ! {
 
 /// `"2m 48s"`, `"1h 12m"`, `"0.4s"`.
 fn wall(secs: f64) -> String {
+    // Elapsed wall-clock seconds are never negative; `as` saturates.
+    #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
     let s = secs.round() as u64;
     match s {
         _ if secs < 10.0 => format!("{secs:.1}s"),

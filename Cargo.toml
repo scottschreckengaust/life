@@ -80,3 +80,11 @@ missing_errors_doc = "warn"
 missing_panics_doc = "warn"
 missing_const_for_fn = "warn"
 too_long_first_doc_paragraph = "warn"
+# Stage 3: numbers. The engine runs on f64 hours over a whole-millisecond clock; every cast
+# is either checked (try_from) or allowed where it is, with why it's exact or saturates.
+cast_possible_truncation = "warn"
+cast_precision_loss = "warn"
+cast_sign_loss = "warn"
+float_cmp = "warn"
+suboptimal_flops = "warn"
+while_float = "warn"
