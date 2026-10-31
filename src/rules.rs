@@ -566,7 +566,10 @@ fn event(mut f: Fields, days: usize, index: &dyn Fn(&str, &str) -> Result<usize>
     } else if let Some(signal) = f.str("signal")? {
         Event::Signal { day, at: need_at()?, signal }
     } else if let Some(shots) = f.int("coffee")? {
-        Event::Coffee { day, at: need_at()?, shots: shots.clamp(1, 20) as u32 }
+        let Some(shots) = u32::try_from(shots).ok().filter(|n| (1..=20).contains(n)) else {
+            return fail(format!("{ctx}.coffee must be 1 to 20 shots, not {shots}"));
+        };
+        Event::Coffee { day, at: need_at()?, shots }
     } else if let Some(u) = f.str("work_until")? {
         Event::WorkUntil {
             day,

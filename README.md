@@ -171,7 +171,7 @@ events = [
 ]
 ```
 
-Events: `pursuit` (with optional `until`, `urgent`, `note`), `signal`, `coffee = <shots>`, `work_until`, `flight`
+Events: `pursuit` (with optional `until`, `urgent`, `note`), `signal`, `coffee = <shots>` (1 to 20), `work_until`, `flight`
 (and `lands`), `up_late` with `doing`, and `skip` (no windows for that pursuit today).
 
 `from`, and `until` or `for`, give a scenario its own [run window](#run-windows): `from = "06:30"`,
