@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.5](https://github.com/scottschreckengaust/life/compare/v0.2.4...v0.2.5) - 2026-10-31
+
+### Fixed
+
+- a coffee of 0 or more than 20 shots is an error, not silently clamped ([#86](https://github.com/scottschreckengaust/life/pull/86))
+
+### Other
+
+- a ClamAV finding stops the release, and every scan proves it can see one ([#89](https://github.com/scottschreckengaust/life/pull/89))
+- clippy ratchet stage 3, the numbers ([#88](https://github.com/scottschreckengaust/life/pull/88))
+- correct the changelog in release-plz.toml, never by hand in the release PR ([#85](https://github.com/scottschreckengaust/life/pull/85))
+- clippy ratchet stage 2, the API surface ([#84](https://github.com/scottschreckengaust/life/pull/84))
+
 ## [0.2.4](https://github.com/scottschreckengaust/life/compare/v0.2.3...v0.2.4) - 2026-10-30
 
 ### Fixed
