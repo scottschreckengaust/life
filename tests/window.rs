@@ -29,7 +29,11 @@ fn a_window_is_the_full_run_clipped() {
     assert!(windowed.spans.iter().all(|s| from <= s.start && s.end <= until));
     assert!(windowed.moments.iter().all(|m| from <= m.at && m.at < until));
     for name in ["geek", "people", "eat", "living", "work", "sleep"] {
-        assert_eq!(windowed.day(3).hours(name), full.day(3).hours(name), "{name}");
+        // Not "close enough": a window must change nothing inside it, to the last bit.
+        #[allow(clippy::float_cmp)]
+        {
+            assert_eq!(windowed.day(3).hours(name), full.day(3).hours(name), "{name}");
+        }
     }
 }
 

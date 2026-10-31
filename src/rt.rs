@@ -85,7 +85,9 @@ impl Exec {
         // An hour of zero wall-clock time makes `hours` infinite: saturate, so the clock is
         // always past the next deadline (time travels, as in Mode::Virtual), instead of
         // wrapping round and spinning forever.
-        self.origin.get().saturating_add((hours * MS_PER_HOUR) as u64)
+        #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)] // saturates, as above
+        let ms = (hours * MS_PER_HOUR) as u64;
+        self.origin.get().saturating_add(ms)
     }
 
     fn waker(&self, id: usize) -> Waker {
@@ -130,6 +132,7 @@ impl Exec {
             Mode::RealTime(per_hour) => {
                 let wall = self.wall(per_hour);
                 if next > wall {
+                    #[allow(clippy::cast_precision_loss)] // milliseconds below 2^53: exact
                     let hours = (next - wall) as f64 / MS_PER_HOUR;
                     thread::park_timeout(per_hour.mul_f64(hours));
                 }
@@ -173,6 +176,8 @@ impl Drop for Enter {
     }
 }
 
+#[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+// `as` from f64 saturates (NaN is 0), and the value is clamped at 0 first: no wrap.
 fn ms(hours: f64) -> u64 {
     (hours * MS_PER_HOUR).round().max(0.0) as u64
 }
@@ -226,7 +231,9 @@ pub fn block_on_live_from<F: Future>(mode: Mode, start: f64, live_from: f64, fut
 
 /// The current simulated time, in hours.
 pub fn now() -> f64 {
-    with(Exec::now) as f64 / MS_PER_HOUR
+    #[allow(clippy::cast_precision_loss)] // milliseconds below 2^53 (285,000 years): exact
+    let ms = with(Exec::now) as f64;
+    ms / MS_PER_HOUR
 }
 
 /// A timer future. Cancel it by dropping it.

@@ -216,7 +216,9 @@ impl Journal {
     /// What you were doing on calendar day `day` (1-based) at `hour` o'clock.
     #[must_use]
     pub fn doing(&self, day: usize, hour: f64) -> Option<&str> {
-        self.doing_at((day - 1) as f64 * EARTH_SPIN + hour).map(|a| self.name(a))
+        #[allow(clippy::cast_precision_loss)] // exact for any day below 2^53
+        let d = (day - 1) as f64;
+        self.doing_at(d.mul_add(EARTH_SPIN, hour)).map(|a| self.name(a))
     }
 
     fn doing_at(&self, t: f64) -> Option<Activity> {
@@ -233,13 +235,19 @@ impl Journal {
     pub fn timeline(&self) -> String {
         let end = self.spans.iter().map(|s| s.end).fold(0.0, f64::max);
         let start = self.spans.iter().map(|s| s.start).fold(f64::INFINITY, f64::min);
-        let first = if start.is_finite() { (start / EARTH_SPIN).floor() as usize + 1 } else { 1 };
-        let rows = (end / EARTH_SPIN).ceil() as usize;
+        // Span times are hours from the start of day 1: finite and not negative. `as` saturates.
+        #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+        let (first, rows) = (
+            if start.is_finite() { (start / EARTH_SPIN).floor() as usize + 1 } else { 1 },
+            (end / EARTH_SPIN).ceil() as usize,
+        );
         let mut out = String::from("        0     3     6     9     12    15    18    21    24\n");
         for d in first..=rows {
             let row: String = (0..48)
                 .map(|k| {
-                    let t = (d - 1) as f64 * EARTH_SPIN + f64::from(k) * 0.5 + 0.25;
+                    #[allow(clippy::cast_precision_loss)] // a day number: exact in f64
+                    let day = (d - 1) as f64;
+                    let t = f64::from(k).mul_add(0.5, day * EARTH_SPIN) + 0.25;
                     self.doing_at(t).map_or(' ', |a| self.glyph(a))
                 })
                 .collect();

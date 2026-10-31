@@ -474,9 +474,9 @@ impl Rules {
                     None => 0,
                 };
                 let days = f.int("days")?.unwrap_or(1);
-                if !(1..=366).contains(&days) {
+                let Some(days) = usize::try_from(days).ok().filter(|d| (1..=366).contains(d)) else {
                     return fail(format!("{ctx}.days must be 1 to 366"));
-                }
+                };
                 let mut events = Vec::new();
                 if let Some(v) = f.raw("events") {
                     let Value::Array(items) = v else {
@@ -488,24 +488,12 @@ impl Rules {
                                 "{ctx}.events[{k}] must be a table like {{ day = 1, ... }}"
                             ));
                         };
-                        events.push(event(
-                            Fields::new(&format!("{ctx}.events[{k}]"), t),
-                            days as usize,
-                            &index,
-                        )?);
+                        events.push(event(Fields::new(&format!("{ctx}.events[{k}]"), t), days, &index)?);
                     }
                 }
                 let (from, until) = run_window(&mut f, &ctx)?;
                 f.done()?;
-                scenarios.push(Scenario {
-                    name: sname,
-                    about,
-                    start,
-                    days: days as usize,
-                    events,
-                    from,
-                    until,
-                });
+                scenarios.push(Scenario { name: sname, about, start, days, events, from, until });
             }
         }
         root.done()?;
@@ -548,10 +536,9 @@ impl Rules {
 fn event(mut f: Fields, days: usize, index: &dyn Fn(&str, &str) -> Result<usize>) -> Result<Event> {
     let ctx = f.ctx.clone();
     let day = f.int("day")?.ok_or_else(|| RuleError(format!("{ctx}: every event needs a `day`")))?;
-    if day < 1 || day as usize > days + 1 {
+    let Some(day) = usize::try_from(day).ok().filter(|d| (1..=days + 1).contains(d)) else {
         return fail(format!("{ctx}.day: {day} is outside this {days}-day scenario"));
-    }
-    let day = day as usize;
+    };
     let at = f.str("at")?.map(|s| time(&s, &format!("{ctx}.at"))).transpose()?;
     let need_at = || {
         at.ok_or_else(|| RuleError(format!("{ctx}: this event needs `at = \"06:30\"` (an ISO 8601 time)")))

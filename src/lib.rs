@@ -53,6 +53,8 @@ const TICK: f64 = 0.25;
 /// `"d1 06:30:15"`, `"d1 06:30:02.5"` (to the millisecond).
 #[must_use]
 pub fn hhmm(abs: f64) -> String {
+    #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+    // `as` from f64 saturates (NaN is 0), and the value is clamped at 0 first: no wrap.
     let ms = (abs * 3_600_000.0).round().max(0.0) as u64;
     let (day, ms) = (ms / 86_400_000 + 1, ms % 86_400_000);
     let (h, m, sec, frac) = (ms / 3_600_000, ms / 60_000 % 60, ms / 1000 % 60, ms % 1000);
@@ -90,7 +92,9 @@ mod tests {
         assert_eq!(windows(&life), [17.0, 41.0, 65.0, 89.0, 113.0, 137.0, 161.0], "never past the last day");
 
         // Day 4's is spent; days 1 and 2 are over at 42:00 (day 2's ends exactly then).
-        life.opps.borrow_mut().iter_mut().find(|o| o.at == 89.0).unwrap().used = true;
+        #[allow(clippy::float_cmp)] // abs() rounds to the millisecond: 89 h is exact
+        let day4 = |o: &&mut Opportunity| o.at == 89.0;
+        life.opps.borrow_mut().iter_mut().find(day4).unwrap().used = true;
         // An unused urgent event that has expired stays: it can still wake you tonight.
         let page = Opportunity {
             pursuit: 0,
@@ -223,7 +227,9 @@ impl Drop for Doing<'_, '_> {
 /// whole millisecond, so a time compared with it has to be one too: unrounded, day 2's 02:13
 /// is a hair past the millisecond its alarm rings on, and the page that rang it was missed.
 fn abs(day: usize, hour: f64) -> f64 {
-    iso::round_ms((day - 1) as f64 * EARTH_SPIN + hour)
+    #[allow(clippy::cast_precision_loss)] // a run is at most 366 days: exact in f64
+    let d = (day - 1) as f64;
+    iso::round_ms(d.mul_add(EARTH_SPIN, hour))
 }
 
 impl<'r> Life<'r> {
@@ -501,6 +507,9 @@ impl<'r> Life<'r> {
         let plan = self.plan();
         let (close, horizon) = (self.at(plan.dinner), self.at(plan.bed));
         let order = if plan.works { &self.rules.workday } else { &self.rules.weekend };
+        // Both sides are on the clock's millisecond (`now()` always is, and `abs` rounds to it),
+        // so this compares whole milliseconds, not drifting floats.
+        #[allow(clippy::while_float)]
         while self.now() < close {
             let idle = self.now();
             let mut arms: Vec<rt::BoxFuture<'_, Option<usize>>> =
@@ -759,11 +768,13 @@ impl<'r> Life<'r> {
             .borrow()
             .iter()
             .filter(|cup| cup.0 == today && cup.1 >= abs(today, c.cutoff))
-            .map(|cup| cup.1 + c.wired + c.per_extra_shot * f64::from(cup.2.saturating_sub(1)))
+            .map(|cup| c.per_extra_shot.mul_add(f64::from(cup.2.saturating_sub(1)), cup.1 + c.wired))
             .fold(f64::NEG_INFINITY, f64::max);
         iso::round_ms(wired)
     }
 
+    #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+    // Hours slept and the cycle are both positive; `as` saturates past u32::MAX cycles.
     fn cycles(hours: f64, cycle: f64) -> u32 {
         (hours / cycle + 1e-9).floor() as u32
     }
