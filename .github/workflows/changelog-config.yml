@@ -57,21 +57,36 @@ jobs:
           { cat "$RUNNER_TEMP/without.toml"; printf '\n[changelog]\ncommit_parsers = [{ message = ".*", group = "other" }]\n'; } > "$RUNNER_TEMP/control.toml"
           fail=0
           newest=$(git tag -l 'v*' --sort=-v:refname | head -n 1)
-          for tag in $(git tag -l 'v*' --sort=-v:refname | head -n 3); do
+          # The newest, the two before it, and the one before those (what the oldest compares with).
+          mapfile -t tags < <(git tag -l 'v*' --sort=-v:refname | head -n 4)
+          for i in 0 1 2; do
+            tag=${tags[$i]} prev=${tags[$((i + 1))]}
             # A release commit is the squash of its release PR: its parent is main just before.
             base=$(git rev-parse "$tag^1")
+            # "What's published" is the previous tag's checkout, not crates.io: crates.io
+            # already has every version since, and would leave nothing to release.
+            published="$RUNNER_TEMP/published-$tag"
+            git worktree add -q --detach "$published" "$prev"
             variants="with without"; [[ $tag == "$newest" ]] && variants+=" control"
             for variant in $variants; do
               wt="$RUNNER_TEMP/wt-$tag-$variant"
               git worktree add -q --detach "$wt" "$base"
               cp "$RUNNER_TEMP/$variant.toml" "$wt/release-plz.toml"
               (cd "$wt" && release-plz update --allow-dirty --config release-plz.toml \
+                --registry-manifest-path "$published/Cargo.toml" \
                 --release-date 2000-01-01 --repo-url "$REPO_URL" >/dev/null)
               cp "$wt/CHANGELOG.md" "$RUNNER_TEMP/out/$tag-$variant.md"
+              echo "::notice title=changelog-config ($tag $variant)::$(wc -l < "$wt/CHANGELOG.md") lines, from $(git show "$base:CHANGELOG.md" | wc -l)"
               git worktree remove --force "$wt"
             done
+            git worktree remove --force "$published"
+            # Each variant has to have written a section, or the comparison is empty.
+            if [[ $(wc -l < "$RUNNER_TEMP/out/$tag-without.md") -le $(git show "$base:CHANGELOG.md" | wc -l) ]]; then
+              fail=1
+              echo "::error title=changelog-config ($tag)::release-plz wrote no new section from $base (compared with $prev)"
+            fi
             if diff -u "$RUNNER_TEMP/out/$tag-without.md" "$RUNNER_TEMP/out/$tag-with.md" > "$RUNNER_TEMP/out/$tag.diff"; then
-              echo "$tag: identical ($(wc -l < "$RUNNER_TEMP/out/$tag-with.md") lines)"
+              echo "::notice title=changelog-config ($tag)::identical with and without [changelog] ($(wc -l < "$RUNNER_TEMP/out/$tag-with.md") lines)"
             else
               fail=1
               echo "::error title=changelog-config ($tag)::[changelog] changes this release's changelog:%0A$(sed 's/%/%25/g' "$RUNNER_TEMP/out/$tag.diff" | head -n 60 | awk '{printf "%s%%0A", $0}')"
@@ -81,7 +96,7 @@ jobs:
             fail=1
             echo "::error title=changelog-config::the control config gave the same changelog for $newest, so this check can't tell configs apart"
           else
-            echo "control: a different config does change $newest's changelog, so the comparison is meaningful"
+            echo "::notice title=changelog-config::control: a different config does change $newest's changelog, so the comparison is meaningful"
           fi
           exit "$fail"
       - name: preview the next release's changelog, with the corrections
