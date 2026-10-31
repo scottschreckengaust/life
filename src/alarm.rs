@@ -15,7 +15,8 @@ impl Why {
     pub const URGENT: Self = Self(2);
 
     /// Does this include `other`?
-    pub fn has(self, other: Self) -> bool {
+    #[must_use]
+    pub const fn has(self, other: Self) -> bool {
         self.0 & other.0 != 0
     }
 }

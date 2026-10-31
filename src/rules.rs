@@ -191,7 +191,8 @@ pub enum Event {
 }
 
 impl Event {
-    pub fn day(&self) -> usize {
+    #[must_use]
+    pub const fn day(&self) -> usize {
         match *self {
             Self::Pursue { day, .. }
             | Self::Signal { day, .. }
@@ -221,6 +222,7 @@ pub struct Scenario {
 
 impl Scenario {
     /// `days` ordinary days starting on a Monday.
+    #[must_use]
     pub fn plain(days: usize) -> Self {
         Self {
             name: "plain".into(),
@@ -252,6 +254,12 @@ pub struct Rules {
 
 impl Rules {
     /// Parse and validate a life file.
+    ///
+    /// # Errors
+    /// If it isn't valid TOML, or breaks a rule; the message names the key and says why.
+    ///
+    /// # Panics
+    /// Never: a glyph is checked to be one character before it's taken.
     pub fn parse(src: &str) -> Result<Self> {
         let mut root = Fields::new("", toml::parse(src)?);
         let name = root.str("name")?.unwrap_or_else(|| "me".into());
@@ -505,25 +513,33 @@ impl Rules {
     }
 
     /// One of the built-in presets.
+    ///
+    /// # Panics
+    /// Never: every built-in preset parses (the tests check each one).
+    #[must_use]
     pub fn preset(name: &str) -> Option<Self> {
         let (_, _, src) = PRESETS.iter().find(|p| p.0 == name)?;
         Some(Self::parse(src).expect("built-in presets are valid"))
     }
 
     /// The source text of a built-in preset.
+    #[must_use]
     pub fn preset_source(name: &str) -> Option<&'static str> {
         PRESETS.iter().find(|p| p.0 == name).map(|p| p.2)
     }
 
+    #[must_use]
     pub fn scenario(&self, name: &str) -> Option<&Scenario> {
         self.scenarios.iter().find(|s| s.name == name)
     }
 
+    #[must_use]
     pub fn pursuit(&self, name: &str) -> Option<usize> {
         self.pursuits.iter().position(|p| p.name == name)
     }
 
     /// Is this day of the week (Monday = 0) a workday?
+    #[must_use]
     pub fn works(&self, weekday: usize) -> bool {
         self.work.as_ref().is_some_and(|w| w.days[weekday % 7])
     }
@@ -699,17 +715,26 @@ fn dur_or(f: &mut Fields, k: &str, default: f64) -> Result<f64> {
 }
 
 /// An ISO 8601 time of day, `"06:30"` or `"06:30:02.5"`, as hours. See [`crate::iso::time`].
+///
+/// # Errors
+/// If `s` isn't one; the message starts with `ctx`.
 pub fn time(s: &str, ctx: &str) -> Result<f64> {
     crate::iso::time(s).map_err(|e| RuleError(format!("{ctx}: {e}")))
 }
 
 /// An ISO 8601 duration, `"PT1H30M"` or `"PT2.5S"`, as hours. See [`crate::iso::duration`].
+///
+/// # Errors
+/// If `s` isn't one; the message starts with `ctx`.
 pub fn duration(s: &str, ctx: &str) -> Result<f64> {
     crate::iso::duration(s).map_err(|e| RuleError(format!("{ctx}: {e}")))
 }
 
 /// An ISO 8601 interval, `"18:00/20:00"` or `"09:00/PT8H"`; an end before the start wraps
 /// past midnight. See [`crate::iso::window`].
+///
+/// # Errors
+/// If `s` isn't one; the message starts with `ctx`.
 pub fn window(s: &str, ctx: &str) -> Result<(f64, f64)> {
     let (start, end) = crate::iso::window(s).map_err(|e| RuleError(format!("{ctx}: {e}")))?;
     // These windows recur daily: one longer than a day would overlap its own next day.

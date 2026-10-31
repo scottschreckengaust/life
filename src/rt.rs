@@ -182,9 +182,11 @@ pub fn block_on<F: Future>(mode: Mode, start: f64, fut: F) -> F::Output {
     block_on_live_from(mode, start, start, fut)
 }
 
-/// Like [`block_on`], but a [`Mode::RealTime`] clock travels in time like [`Mode::Virtual`]
-/// until `live_from`, and only follows the wall clock from there: a window late in a long run
-/// doesn't wait through everything before it. In [`Mode::Virtual`], `live_from` changes nothing.
+/// Like [`block_on`], but a real-time clock only follows the wall clock from `live_from`.
+///
+/// Until then a [`Mode::RealTime`] clock travels in time like [`Mode::Virtual`], so a window
+/// late in a long run doesn't wait through everything before it. In [`Mode::Virtual`],
+/// `live_from` changes nothing.
 pub fn block_on_live_from<F: Future>(mode: Mode, start: f64, live_from: f64, fut: F) -> F::Output {
     let live_from = ms(live_from).max(ms(start));
     let exec = Rc::new(Exec {
@@ -255,6 +257,7 @@ impl Future for Sleep {
 }
 
 /// Sleep until simulated hour `at`.
+#[must_use]
 pub fn sleep_until(at: f64) -> Sleep {
     Sleep { at: ms(at), armed: false }
 }
@@ -280,6 +283,9 @@ impl JoinHandle {
 }
 
 /// Run a background task on the current runtime.
+///
+/// # Panics
+/// Outside [`block_on`].
 pub fn spawn(fut: impl Future<Output = ()> + 'static) -> JoinHandle {
     with(|e| {
         let mut tasks = e.tasks.borrow_mut();
@@ -296,6 +302,9 @@ pub struct Bell(Mutex<(bool, Option<Waker>)>);
 
 impl Bell {
     /// Ring it. Safe from any thread.
+    ///
+    /// # Panics
+    /// If a thread panicked while ringing or listening (the lock is poisoned).
     pub fn ring(&self) {
         let waker = {
             let mut s = self.0.lock().unwrap();
@@ -308,6 +317,9 @@ impl Bell {
     }
 
     /// Resolves once the bell has rung, consuming the permit.
+    ///
+    /// # Panics
+    /// If a thread panicked while ringing or listening (the lock is poisoned).
     pub fn heard(&self) -> impl Future<Output = ()> + '_ {
         std::future::poll_fn(move |cx| {
             let mut s = self.0.lock().unwrap();
