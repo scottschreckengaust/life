@@ -319,8 +319,8 @@ its own provenance, and the release workflow proves it is byte-for-byte the file
 `gh attestation verify` on a `.crate` downloaded from crates.io too.
 
 Before anything is published, the release workflow scans every asset, archives and unpacked, with
-[ClamAV](https://www.clamav.net/). The scan only reports for now; it doesn't block a release (#60). The engine and
-signature versions it used are in the release run's summary.
+[ClamAV](https://www.clamav.net/), and a finding stops the release. Each scan first proves ClamAV detects its own test
+files, so a clean result means something. The engine and signature versions are in the release run's summary.
 
 ## Contributing from a fork
 
