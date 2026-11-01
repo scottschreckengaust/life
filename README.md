@@ -330,8 +330,9 @@ Fork PRs are welcome, and they can't reach anything that ships:
 - **No workflow uses `pull_request_target`.** Everything a PR triggers runs on plain `pull_request`, so a fork's
   run gets a read-only token and no secrets. `rehearse-reminder` comments only on PRs from this repository; on a
   fork's (or Dependabot's) it leaves the reminder in its run summary instead.
-- **Releases** only run from `main` and `v*` tags, in the `release` environment, which is the only place the
-  release-tagger key and crates.io's trust live. Only the release-tagger App can create `v*` tags.
+- **Releases** only run from `main` and `v*` tags, in two environments that each hold one power: `tag` has
+  the release-tagger key, and `release` has crates.io's trust and the one required approval. Only the
+  release-tagger App can create `v*` tags.
 - **Code owners** ([`.github/CODEOWNERS`](.github/CODEOWNERS)) must review changes to `.github/`, `Cargo.toml`,
   `Cargo.lock`, `release-plz.toml` and `presets/`.
 - **[zizmor](https://github.com/zizmorcore/zizmor)** checks every workflow change for dangerous triggers, template
@@ -419,12 +420,18 @@ PR and its merge), the release-tagger App (`v*` tags) and `github-actions[bot]` 
    checks count as required status checks), and merging it starts `release.yml`. Check the wiring any time: run
    [`bot-check`](.github/workflows/bot-check.yml) from `main` (it also proves the App can't get *Workflows*);
    from any other branch the environment must refuse it.
-3. **The `release` environment** (Settings → Environments → `release`): deployments only from branch `main` and
-   tags `v*`. It is the one place both powers live: crates.io only trusts jobs in `release`, and it holds the
-   release-tagger App's key. Rehearsals use no environment, so they can't reach either.
+3. **Two environments, one power each** (Settings → Environments), both deploying only from branch `main` and
+   tags `v*`:
+   - **`release`**: crates.io only trusts jobs in it, and it has you as **required reviewer**. That makes
+     `publish` the release's one approval. By then everything is built, attested, tested from the draft and
+     scanned, and it's the one step that can't be undone.
+   - **`tag`**: the release-tagger App's key, and **no reviewer**. `draft` tags and makes a private draft
+     there; both are harmless until published, and a re-run reuses them.
+
+   No job holds both powers. Rehearsals use no environment, so they can reach neither.
 4. **The release-tagger App**, the only identity allowed to create `v*` tags. A GitHub App with no webhook and
    one permission, *Contents: read and write*, installed on this repository only. Its Client ID is the
-   `release` environment variable `TAGGER_CLIENT_ID`, and a private key is the environment secret
+   `tag` environment variable `TAGGER_CLIENT_ID`, and a private key is the environment secret
    `TAGGER_PRIVATE_KEY`. The workflows mint a one-hour token from it only to create the tag. Check the wiring any time: run *release-cut* from `main` with **check_tagger** ticked.
 5. **Lock what's released:**
    - *Immutable releases* (Settings → General → Releases): published assets and tags can't change.
