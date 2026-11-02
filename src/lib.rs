@@ -364,7 +364,7 @@ impl<'r> Life<'r> {
     /// urgent events wake you, so a window over by `now` can never be picked). Order is kept,
     /// so ties still go to the same one. Call it only while no opportunity index is held.
     fn prune(&self, now: f64) {
-        self.opps.borrow_mut().retain(|o| !o.used && !(o.kind == Kind::Window && o.expires <= now));
+        self.opps.borrow_mut().retain(|o| !o.used && (o.kind != Kind::Window || o.expires > now));
     }
 
     /// Print the diary to stdout as it happens.

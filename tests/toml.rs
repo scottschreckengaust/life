@@ -2,6 +2,7 @@
 //! rejects. Every error path in src/toml.rs is exercised here.
 
 use spin_life::toml::{parse, Error, Value};
+use std::fmt::Write as _;
 
 #[track_caller]
 fn ok(src: &str) -> spin_life::toml::Table {
@@ -105,7 +106,10 @@ fn errors_name_the_line() {
     rejects(&deep(100_000), 1, "nest at most 64 deep");
     // The limit is on depth, not on how many there are: siblings don't add up.
     ok(&format!("a = [{}]", "[[]], ".repeat(200)));
-    ok(&(0..200).map(|i| format!("k{i} = [{{x = [1]}}]\n")).collect::<String>());
+    ok(&(0..200).fold(String::new(), |mut s, i| {
+        let _ = writeln!(s, "k{i} = [{{x = [1]}}]");
+        s
+    }));
     let tables = |n: usize| format!("a = {}1{}", "{x = ".repeat(n), "}".repeat(n));
     ok(&tables(64));
     rejects(&tables(65), 1, "nest at most 64 deep");

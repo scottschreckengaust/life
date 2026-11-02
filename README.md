@@ -299,6 +299,11 @@ error, the CLI as a shell sees it, golden outputs, and real-time runs against th
 - **No dependencies.** [cargo-deny](https://github.com/EmbarkStudios/cargo-deny) ([`deny.toml`](deny.toml))
   fails CI if any crate but `spin-life` itself appears, and checks advisories, licenses and sources for the day
   one is allowed.
+- **Every clippy lint.** All of `clippy::pedantic` and `clippy::nursery` are on, as errors in CI
+  (`cargo clippy --all-targets -- -D warnings`), and a lint, once on, is never turned off. Two are allowed for
+  the whole crate, with the reason beside each in `Cargo.toml`'s `[lints.clippy]`. A single site that's right
+  as it is gets an `#[allow]` where it is, with a comment saying why: a cast that's exact or saturates on
+  purpose, a float compared exactly because it's exact by construction.
 
 ## Verify what you download
 
