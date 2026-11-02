@@ -70,12 +70,12 @@ pub fn hhmm(abs: f64) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{hhmm, rt::Mode, Life, Opportunity, Rules};
+    use super::{hhmm, rt::Mode, Kind, Life, Opportunity, Rules};
 
     const AGENT: &str = include_str!("../presets/agent.life.toml");
 
     fn windows(life: &Life) -> Vec<f64> {
-        life.opps.borrow().iter().filter(|o| o.scheduled).map(|o| o.at).collect()
+        life.opps.borrow().iter().filter(|o| o.kind == Kind::Window).map(|o| o.at).collect()
     }
 
     #[test]
@@ -101,10 +101,8 @@ mod tests {
             at: 30.0,
             ends: None,
             expires: 31.0,
-            urgent: true,
             note: None,
-            rested: false,
-            scheduled: false,
+            kind: Kind::Urgent,
             used: false,
         };
         life.opps.borrow_mut().push(page);
@@ -149,13 +147,22 @@ struct Opportunity {
     ends: Option<f64>,
     /// Gone after this (a swell flattens out, family dinner ends).
     expires: f64,
-    urgent: bool,
     note: Option<String>,
-    /// Produced by a good night's sleep.
-    rested: bool,
-    /// A recurring `when` window. Like urgent events, these can preempt.
-    scheduled: bool,
+    kind: Kind,
     used: bool,
+}
+
+/// Where an opportunity came from. Each is exactly one of these.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Kind {
+    /// A scenario event, or a signal's chance at a pursuit.
+    Event,
+    /// An urgent event: it preempts, and can wake you.
+    Urgent,
+    /// A recurring `when` window. Like urgent events, these preempt.
+    Window,
+    /// Produced by a good night's sleep.
+    Rested,
 }
 
 /// One day, after the scenario's events have been applied to the rules. Hours are local.
@@ -271,10 +278,8 @@ impl<'r> Life<'r> {
                         at,
                         ends,
                         expires,
-                        urgent: *urgent,
                         note: note.clone(),
-                        rested: false,
-                        scheduled: false,
+                        kind: if *urgent { Kind::Urgent } else { Kind::Event },
                         used: false,
                     });
                 }
@@ -289,10 +294,8 @@ impl<'r> Life<'r> {
                             at,
                             ends: None,
                             expires,
-                            urgent: false,
                             note: None,
-                            rested: false,
-                            scheduled: false,
+                            kind: Kind::Event,
                             used: false,
                         });
                     }
@@ -347,10 +350,8 @@ impl<'r> Life<'r> {
                         at,
                         ends: Some(end),
                         expires: end,
-                        urgent: false,
                         note: None,
-                        rested: false,
-                        scheduled: true,
+                        kind: Kind::Window,
                         used: false,
                     });
                 }
@@ -363,7 +364,7 @@ impl<'r> Life<'r> {
     /// urgent events wake you, so a window over by `now` can never be picked). Order is kept,
     /// so ties still go to the same one. Call it only while no opportunity index is held.
     fn prune(&self, now: f64) {
-        self.opps.borrow_mut().retain(|o| !o.used && !(o.scheduled && o.expires <= now));
+        self.opps.borrow_mut().retain(|o| !o.used && !(o.kind == Kind::Window && o.expires <= now));
     }
 
     /// Print the diary to stdout as it happens.
@@ -471,7 +472,7 @@ impl<'r> Life<'r> {
 
     async fn morning(&self) {
         self.log(if self.today.get() == 1 { "⏰ rise and shine" } else { "⏰ alarm: the earth spun once" });
-        if self.opps.borrow().iter().any(|o| o.rested && !o.used) {
+        if self.opps.borrow().iter().any(|o| o.kind == Kind::Rested && !o.used) {
             self.log(self.rules.sleep.signal_note.clone());
         }
         self.log("🍳 breakfast");
@@ -543,7 +544,11 @@ impl<'r> Life<'r> {
         let next_wake = abs(self.today.get() + 1, self.plans[self.today.get()].wake);
         let woken_by = &self.rules.sleep.woken_by;
         let disturbs = move |o: &Opportunity| {
-            !o.used && o.urgent && woken_by.contains(&o.pursuit) && o.at >= lights_out && o.at < next_wake
+            !o.used
+                && o.kind == Kind::Urgent
+                && woken_by.contains(&o.pursuit)
+                && o.at >= lights_out
+                && o.at < next_wake
         };
         // Whatever your rules say may wake you rings the same alarm as the sunrise.
         let ringers: Vec<rt::JoinHandle> = self
@@ -599,16 +604,14 @@ impl<'r> Life<'r> {
             for (i, _) in
                 self.rules.pursuits.iter().enumerate().filter(|(_, p)| p.on.as_ref() == Some(&s.signal))
             {
-                if !opps.iter().any(|o| o.rested && !o.used && o.pursuit == i) {
+                if !opps.iter().any(|o| o.kind == Kind::Rested && !o.used && o.pursuit == i) {
                     opps.push(Opportunity {
                         pursuit: i,
                         at: now,
                         ends: None,
                         expires: f64::INFINITY,
-                        urgent: false,
                         note: None,
-                        rested: true,
-                        scheduled: false,
+                        kind: Kind::Rested,
                         used: false,
                     });
                 }
@@ -651,7 +654,7 @@ impl<'r> Life<'r> {
                 .then(|| {
                     self.next(|q| {
                         !q.used
-                            && (q.urgent || q.scheduled)
+                            && matches!(q.kind, Kind::Urgent | Kind::Window)
                             && rules.pursuits[q.pursuit].preempts.contains(&p)
                             && q.at < end
                             && q.at < horizon
@@ -737,6 +740,9 @@ impl<'r> Life<'r> {
         &self.plans[self.today.get() - 1]
     }
 
+    // A method, so it reads as `self.now()` beside `self.at(h)` and `self.today`, though the
+    // clock is the runtime's, not this Life's.
+    #[allow(clippy::unused_self)]
     fn now(&self) -> f64 {
         rt::now()
     }
