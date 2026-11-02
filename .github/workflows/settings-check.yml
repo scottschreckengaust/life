@@ -70,7 +70,14 @@ jobs:
           REPO: ${{ github.repository }}
         run: |
           bash .github/settings/snapshot.sh >live.json
-          if [[ $FULL == 1 ]]; then
+          if [[ $FULL == 1 && $(jq 'has("admin")' .github/settings/expected.json) == false ]]; then
+            # The first full run: record what's there, for a PR to commit into expected.json.
+            # From then on, any difference fails.
+            { echo '### settings: the admin section, to commit into .github/settings/expected.json'; echo '```json'; jq --sort-keys '{admin}' live.json; echo '```'; } >>"$GITHUB_STEP_SUMMARY"
+            echo "::warning title=settings snapshot::expected.json has no admin section yet; the live one is in this run's summary, to commit"
+            jq --sort-keys 'del(.admin)' live.json >live-readable.json && mv live-readable.json live.json
+            jq --sort-keys . .github/settings/expected.json >expected.json
+          elif [[ $FULL == 1 ]]; then
             cp .github/settings/expected.json expected.json
           else
             jq --sort-keys 'del(.admin)' .github/settings/expected.json >expected.json
