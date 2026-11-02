@@ -103,3 +103,44 @@ jobs:
           fi
           echo "::notice::lock-bot App can't touch workflow runs, as intended"
           echo "### lock-bot: ok, from $GITHUB_REF in environment lock" >>"$GITHUB_STEP_SUMMARY"
+
+  settings-reader:
+    if: github.repository_owner == 'scottschreckengaust'
+    runs-on: ubuntu-latest
+    environment: settings
+    permissions: {}
+    steps:
+      - id: token
+        name: "settings-reader token: read-only (its job)"
+        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
+        with:
+          client-id: ${{ vars.SETTINGS_CLIENT_ID }}
+          private-key: ${{ secrets.SETTINGS_PRIVATE_KEY }}
+          permission-administration: read
+          permission-actions: read
+          permission-environments: read
+      - name: the token can read the admin-only settings
+        env:
+          GH_TOKEN: ${{ steps.token.outputs.token }}
+        run: |
+          gh api "repos/$GITHUB_REPOSITORY/actions/permissions" --jq .allowed_actions >/dev/null
+          gh api "repos/$GITHUB_REPOSITORY/environments" --jq '.total_count' >/dev/null
+          echo "::notice::settings-reader can read Actions settings and environments"
+      - id: too-much
+        name: "settings-reader token with administration: write (must be refused)"
+        continue-on-error: true
+        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
+        with:
+          client-id: ${{ vars.SETTINGS_CLIENT_ID }}
+          private-key: ${{ secrets.SETTINGS_PRIVATE_KEY }}
+          permission-administration: write
+      - name: the App can't change settings
+        env:
+          OUTCOME: ${{ steps.too-much.outcome }}
+        run: |
+          if [[ "$OUTCOME" == success ]]; then
+            echo "::error::the settings-reader App can write Administration; make every permission read-only (Settings > Developer settings > GitHub Apps)"
+            exit 1
+          fi
+          echo "::notice::settings-reader App is read-only, as intended"
+          echo "### settings-reader: ok, from $GITHUB_REF in environment settings" >>"$GITHUB_STEP_SUMMARY"
