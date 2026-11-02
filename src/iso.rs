@@ -32,7 +32,7 @@ pub fn time(s: &str) -> Result<f64, String> {
         return Err(bad("one time, not a window"));
     }
     let mut parts = s.split(':');
-    let (Some(h), Some(m)) = (parts.next(), parts.next()) else {
+    let (Some(hh), Some(mm)) = (parts.next(), parts.next()) else {
         return Err(bad("needs hh:mm"));
     };
     let sec = parts.next();
@@ -40,39 +40,39 @@ pub fn time(s: &str) -> Result<f64, String> {
         return Err(bad("too many parts"));
     }
     let two = |p: &str| p.len() == 2 && p.bytes().all(|b| b.is_ascii_digit());
-    if !two(h) || !two(m) {
+    if !two(hh) || !two(mm) {
         return Err(bad("hours and minutes need 2 digits each"));
     }
-    let (h, m): (u32, u32) = (h.parse().unwrap(), m.parse().unwrap());
+    let (hours, minutes): (u32, u32) = (hh.parse().unwrap(), mm.parse().unwrap());
     let secs = match sec {
         None => 0.0,
-        Some(p) => {
-            let (whole, frac) = match p.split_once(['.', ',']) {
-                Some((w, f)) => (w, Some(f)),
-                None => (p, None),
+        Some(ss) => {
+            let (whole, frac) = match ss.split_once(['.', ',']) {
+                Some((whole, frac)) => (whole, Some(frac)),
+                None => (ss, None),
             };
             if !two(whole) {
                 return Err(bad("seconds need 2 digits"));
             }
-            if let Some(f) = frac {
-                if f.is_empty() || f.len() > 9 || !f.bytes().all(|b| b.is_ascii_digit()) {
+            if let Some(digits) = frac {
+                if digits.is_empty() || digits.len() > 9 || !digits.bytes().all(|b| b.is_ascii_digit()) {
                     return Err(bad("the fraction needs 1 to 9 digits"));
                 }
             }
-            let v: f64 = format!("{whole}.{}", frac.unwrap_or("0")).parse().unwrap();
-            if v >= 60.0 {
+            let secs: f64 = format!("{whole}.{}", frac.unwrap_or("0")).parse().unwrap();
+            if secs >= 60.0 {
                 return Err(bad("seconds go up to 59"));
             }
-            v
+            secs
         }
     };
-    if m >= 60 {
+    if minutes >= 60 {
         return Err(bad("minutes go up to 59"));
     }
-    if h > 24 || (h == 24 && (m > 0 || secs > 0.0)) {
+    if hours > 24 || (hours == 24 && (minutes > 0 || secs > 0.0)) {
         return Err(bad("hours go up to 23, or 24:00 for midnight at the end of the day"));
     }
-    Ok(round_ms(f64::from(h) + f64::from(m) / 60.0 + secs / 3600.0))
+    Ok(round_ms(f64::from(hours) + f64::from(minutes) / 60.0 + secs / 3600.0))
 }
 
 /// An ISO 8601 duration, `P[nD][T[nH][nM][nS]]` or `PnW`, as hours. Only the last component

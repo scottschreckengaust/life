@@ -88,3 +88,16 @@ cast_sign_loss = "warn"
 float_cmp = "warn"
 suboptimal_flops = "warn"
 while_float = "warn"
+# Stage 4: design.
+many_single_char_names = "warn"
+needless_pass_by_value = "warn"
+struct_excessive_bools = "warn"
+too_many_lines = "warn"
+unused_self = "warn"
+# Allowed on purpose:
+# - The runtime (src/rt.rs) is single-threaded by design: a Life and its futures never cross
+#   threads, so their futures needn't be Send.
+future_not_send = "allow"
+# - It turns a two-arm `match` on an Option into `map_or_else` with two closures, which reads
+#   worse here.
+option_if_let_else = "allow"

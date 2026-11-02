@@ -266,40 +266,7 @@ impl Rules {
         let motto = root.str("motto")?;
 
         // Pursuits first: everything else refers to them by name.
-        let mut specs = Vec::new();
-        if let Some(table) = root.table("pursuit")? {
-            for (pname, value) in table {
-                if BUILTIN.contains(&pname.as_str()) {
-                    return fail(format!("[pursuit.{pname}]: `{pname}` is built in; pick another name"));
-                }
-                let Value::Table(t) = value else {
-                    return fail(format!("`pursuit.{pname}` must be a table"));
-                };
-                specs.push((pname.clone(), Fields::new(&format!("pursuit.{pname}"), t)));
-            }
-        }
-        if specs.is_empty() {
-            return fail("a life needs at least one [pursuit.<name>]");
-        }
-        // Report pursuits in the order you rank them (workday first), not alphabetically.
-        // Anything unranked follows, alphabetically. Peek only: [priorities] is validated below.
-        let ranked: Vec<String> = match root.t.get("priorities") {
-            Some(Value::Table(p)) => ["workday", "all", "weekend"]
-                .iter()
-                .filter_map(|k| match p.get(*k) {
-                    Some(Value::Array(items)) => Some(items.clone()),
-                    Some(v @ Value::Str(_)) => Some(vec![v.clone()]),
-                    _ => None,
-                })
-                .flatten()
-                .filter_map(|v| match v {
-                    Value::Str(s) => Some(s),
-                    _ => None,
-                })
-                .collect(),
-            _ => vec![],
-        };
-        specs.sort_by_key(|(name, _)| ranked.iter().position(|r| r == name).unwrap_or(usize::MAX));
+        let specs = pursuit_specs(&mut root)?;
         let names: Vec<String> = specs.iter().map(|(n, _)| n.clone()).collect();
         let index = |name: &str, ctx: &str| -> Result<usize> {
             names.iter().position(|n| n == name).ok_or_else(|| {
@@ -307,25 +274,7 @@ impl Rules {
             })
         };
 
-        let work = if let Some(t) = root.table("work")? {
-            let mut w = Fields::new("work", t);
-            let days = match w.raw("days") {
-                Some(v) => days(&v, None, "work.days")?,
-                None => [true, true, true, true, true, false, false],
-            };
-            let (start, end) =
-                window(&w.str("hours")?.unwrap_or_else(|| "09:00/17:00".into()), "work.hours")?;
-            let lunch = match w.str("lunch")? {
-                Some(s) if s == "none" => None,
-                Some(s) => Some(window(&s, "work.lunch")?),
-                None => Some((12.0, 13.0)),
-            };
-            let note = w.str("note")?.unwrap_or_else(|| "💼 work".into());
-            w.done()?;
-            Some(Work { days, start, end, lunch, note })
-        } else {
-            None
-        };
+        let work = work_section(&mut root)?;
         let workdays = work.as_ref().map(|w| w.days);
 
         let mut pursuits = Vec::new();
@@ -400,102 +349,12 @@ impl Rules {
             (all.clone(), all)
         };
 
-        let mut s = Fields::new("sleep", root.table("sleep")?.unwrap_or_default());
-        let wake = time_or(&mut s, "wake", 6.5)?;
-        let mut bed = time_or(&mut s, "bed", 22.5)?;
-        let weekend_wake = time_or(&mut s, "weekend_wake", wake)?;
-        let mut weekend_bed = time_or(&mut s, "weekend_bed", bed)?;
-        for b in [&mut bed, &mut weekend_bed] {
-            if *b <= wake.max(weekend_wake) {
-                *b += 24.0; // "02:00" means after midnight
-            }
-        }
-        let rem_cycle = dur_or(&mut s, "rem_cycle", 1.5)?;
-        if rem_cycle <= 0.0 {
-            return fail("sleep.rem_cycle must be longer than 0");
-        }
-        let signal_after = match s.int("signal_after")? {
-            Some(n) => Some(u32::try_from(n).map_err(|_| {
-                RuleError(format!(
-                    "sleep.signal_after must be a whole number from 0 to {}, not {n}",
-                    u32::MAX
-                ))
-            })?),
-            None => None,
-        };
-        let signal = s.str("signal")?.unwrap_or_else(|| "idea".into());
-        let signal_note = s.str("signal_note")?.unwrap_or_else(|| format!("💡 woke up with: {signal}"));
-        let woken_by = s
-            .strs("woken_by")?
-            .unwrap_or_default()
-            .iter()
-            .map(|n| index(n, "sleep.woken_by"))
-            .collect::<Result<_>>()?;
-        s.done()?;
-        let sleep = Sleep {
-            wake,
-            bed,
-            weekend_wake,
-            weekend_bed,
-            rem_cycle,
-            signal_after,
-            signal,
-            signal_note,
-            woken_by,
-        };
+        let sleep = sleep_section(&mut root, &index)?;
 
-        let mut m = Fields::new("meals", root.table("meals")?.unwrap_or_default());
-        let breakfast = dur_or(&mut m, "breakfast", 0.5)?;
-        let dinner = time_or(&mut m, "dinner", 20.0)?;
-        let weekend_dinner = time_or(&mut m, "weekend_dinner", dinner)?;
-        let dinner_lasts = dur_or(&mut m, "dinner_lasts", 1.0)?;
-        m.done()?;
-        let meals = Meals { breakfast, dinner, weekend_dinner, dinner_lasts };
+        let meals = meals_section(&mut root)?;
+        let caffeine = caffeine_section(&mut root)?;
 
-        let mut c = Fields::new("caffeine", root.table("caffeine")?.unwrap_or_default());
-        let caffeine = Caffeine {
-            cutoff: time_or(&mut c, "cutoff", 12.0)?,
-            wired: dur_or(&mut c, "wired", 6.0)?,
-            per_extra_shot: dur_or(&mut c, "per_extra_shot", 1.5)?,
-        };
-        c.done()?;
-
-        let mut scenarios = Vec::new();
-        if let Some(table) = root.table("scenario")? {
-            for (sname, value) in table {
-                let ctx = format!("scenario.{sname}");
-                let Value::Table(t) = value else { return fail(format!("`{ctx}` must be a table")) };
-                let mut f = Fields::new(&ctx, t);
-                let about = f.str("about")?.unwrap_or_default();
-                let start = match f.str("start")? {
-                    Some(d) => {
-                        weekday(&d).ok_or_else(|| RuleError(format!("{ctx}.start: `{d}` is not mon..sun")))?
-                    }
-                    None => 0,
-                };
-                let days = f.int("days")?.unwrap_or(1);
-                let Some(days) = usize::try_from(days).ok().filter(|d| (1..=366).contains(d)) else {
-                    return fail(format!("{ctx}.days must be 1 to 366"));
-                };
-                let mut events = Vec::new();
-                if let Some(v) = f.raw("events") {
-                    let Value::Array(items) = v else {
-                        return fail(format!("{ctx}.events must be an array"));
-                    };
-                    for (k, item) in items.into_iter().enumerate() {
-                        let Value::Table(t) = item else {
-                            return fail(format!(
-                                "{ctx}.events[{k}] must be a table like {{ day = 1, ... }}"
-                            ));
-                        };
-                        events.push(event(Fields::new(&format!("{ctx}.events[{k}]"), t), days, &index)?);
-                    }
-                }
-                let (from, until) = run_window(&mut f, &ctx)?;
-                f.done()?;
-                scenarios.push(Scenario { name: sname, about, start, days, events, from, until });
-            }
-        }
+        let scenarios = scenarios_section(&mut root, &index)?;
         root.done()?;
         Ok(Self { name, motto, sleep, work, meals, caffeine, pursuits, workday, weekend, scenarios })
     }
@@ -531,6 +390,166 @@ impl Rules {
     pub fn works(&self, weekday: usize) -> bool {
         self.work.as_ref().is_some_and(|w| w.days[weekday % 7])
     }
+}
+
+/// The `[pursuit.*]` tables, unparsed, in the order you rank them (workday first).
+fn pursuit_specs(root: &mut Fields) -> Result<Vec<(String, Fields)>> {
+    let mut specs = Vec::new();
+    if let Some(table) = root.table("pursuit")? {
+        for (pname, value) in table {
+            if BUILTIN.contains(&pname.as_str()) {
+                return fail(format!("[pursuit.{pname}]: `{pname}` is built in; pick another name"));
+            }
+            let Value::Table(t) = value else {
+                return fail(format!("`pursuit.{pname}` must be a table"));
+            };
+            specs.push((pname.clone(), Fields::new(&format!("pursuit.{pname}"), t)));
+        }
+    }
+    if specs.is_empty() {
+        return fail("a life needs at least one [pursuit.<name>]");
+    }
+    // Report pursuits in the order you rank them (workday first), not alphabetically.
+    // Anything unranked follows, alphabetically. Peek only: [priorities] is validated below.
+    let ranked: Vec<String> = match root.t.get("priorities") {
+        Some(Value::Table(p)) => ["workday", "all", "weekend"]
+            .iter()
+            .filter_map(|k| match p.get(*k) {
+                Some(Value::Array(items)) => Some(items.clone()),
+                Some(v @ Value::Str(_)) => Some(vec![v.clone()]),
+                _ => None,
+            })
+            .flatten()
+            .filter_map(|v| match v {
+                Value::Str(s) => Some(s),
+                _ => None,
+            })
+            .collect(),
+        _ => vec![],
+    };
+    specs.sort_by_key(|(name, _)| ranked.iter().position(|r| r == name).unwrap_or(usize::MAX));
+    Ok(specs)
+}
+
+/// `[work]`: days, hours and lunch. Absent means you don't work.
+fn work_section(root: &mut Fields) -> Result<Option<Work>> {
+    Ok(if let Some(t) = root.table("work")? {
+        let mut w = Fields::new("work", t);
+        let days = match w.raw("days") {
+            Some(v) => days(&v, None, "work.days")?,
+            None => [true, true, true, true, true, false, false],
+        };
+        let (start, end) = window(&w.str("hours")?.unwrap_or_else(|| "09:00/17:00".into()), "work.hours")?;
+        let lunch = match w.str("lunch")? {
+            Some(s) if s == "none" => None,
+            Some(s) => Some(window(&s, "work.lunch")?),
+            None => Some((12.0, 13.0)),
+        };
+        let note = w.str("note")?.unwrap_or_else(|| "💼 work".into());
+        w.done()?;
+        Some(Work { days, start, end, lunch, note })
+    } else {
+        None
+    })
+}
+
+/// `[sleep]`: wake and bed times, the dream cycle and its signal, and who can wake you.
+fn sleep_section(root: &mut Fields, index: &dyn Fn(&str, &str) -> Result<usize>) -> Result<Sleep> {
+    let mut f = Fields::new("sleep", root.table("sleep")?.unwrap_or_default());
+    let wake = time_or(&mut f, "wake", 6.5)?;
+    let mut bed = time_or(&mut f, "bed", 22.5)?;
+    let weekend_wake = time_or(&mut f, "weekend_wake", wake)?;
+    let mut weekend_bed = time_or(&mut f, "weekend_bed", bed)?;
+    for b in [&mut bed, &mut weekend_bed] {
+        if *b <= wake.max(weekend_wake) {
+            *b += 24.0; // "02:00" means after midnight
+        }
+    }
+    let rem_cycle = dur_or(&mut f, "rem_cycle", 1.5)?;
+    if rem_cycle <= 0.0 {
+        return fail("sleep.rem_cycle must be longer than 0");
+    }
+    let signal_after = match f.int("signal_after")? {
+        Some(n) => Some(u32::try_from(n).map_err(|_| {
+            RuleError(format!("sleep.signal_after must be a whole number from 0 to {}, not {n}", u32::MAX))
+        })?),
+        None => None,
+    };
+    let signal = f.str("signal")?.unwrap_or_else(|| "idea".into());
+    let signal_note = f.str("signal_note")?.unwrap_or_else(|| format!("💡 woke up with: {signal}"));
+    let woken_by = f
+        .strs("woken_by")?
+        .unwrap_or_default()
+        .iter()
+        .map(|n| index(n, "sleep.woken_by"))
+        .collect::<Result<_>>()?;
+    f.done()?;
+    Ok(Sleep { wake, bed, weekend_wake, weekend_bed, rem_cycle, signal_after, signal, signal_note, woken_by })
+}
+
+/// `[meals]`: breakfast, and dinner on workdays and days off.
+fn meals_section(root: &mut Fields) -> Result<Meals> {
+    let mut f = Fields::new("meals", root.table("meals")?.unwrap_or_default());
+    let breakfast = dur_or(&mut f, "breakfast", 0.5)?;
+    let dinner = time_or(&mut f, "dinner", 20.0)?;
+    let weekend_dinner = time_or(&mut f, "weekend_dinner", dinner)?;
+    let dinner_lasts = dur_or(&mut f, "dinner_lasts", 1.0)?;
+    f.done()?;
+    Ok(Meals { breakfast, dinner, weekend_dinner, dinner_lasts })
+}
+
+/// `[caffeine]`: the cutoff after which coffee keeps you up, and for how long.
+fn caffeine_section(root: &mut Fields) -> Result<Caffeine> {
+    let mut f = Fields::new("caffeine", root.table("caffeine")?.unwrap_or_default());
+    let caffeine = Caffeine {
+        cutoff: time_or(&mut f, "cutoff", 12.0)?,
+        wired: dur_or(&mut f, "wired", 6.0)?,
+        per_extra_shot: dur_or(&mut f, "per_extra_shot", 1.5)?,
+    };
+    f.done()?;
+    Ok(caffeine)
+}
+
+/// `[scenario.*]`: each one's days, start, window and events.
+fn scenarios_section(
+    root: &mut Fields,
+    index: &dyn Fn(&str, &str) -> Result<usize>,
+) -> Result<Vec<Scenario>> {
+    let mut scenarios = Vec::new();
+    if let Some(table) = root.table("scenario")? {
+        for (sname, value) in table {
+            let ctx = format!("scenario.{sname}");
+            let Value::Table(t) = value else { return fail(format!("`{ctx}` must be a table")) };
+            let mut f = Fields::new(&ctx, t);
+            let about = f.str("about")?.unwrap_or_default();
+            let start = match f.str("start")? {
+                Some(d) => {
+                    weekday(&d).ok_or_else(|| RuleError(format!("{ctx}.start: `{d}` is not mon..sun")))?
+                }
+                None => 0,
+            };
+            let days = f.int("days")?.unwrap_or(1);
+            let Some(days) = usize::try_from(days).ok().filter(|d| (1..=366).contains(d)) else {
+                return fail(format!("{ctx}.days must be 1 to 366"));
+            };
+            let mut events = Vec::new();
+            if let Some(v) = f.raw("events") {
+                let Value::Array(items) = v else {
+                    return fail(format!("{ctx}.events must be an array"));
+                };
+                for (k, item) in items.into_iter().enumerate() {
+                    let Value::Table(t) = item else {
+                        return fail(format!("{ctx}.events[{k}] must be a table like {{ day = 1, ... }}"));
+                    };
+                    events.push(event(Fields::new(&format!("{ctx}.events[{k}]"), t), days, &index)?);
+                }
+            }
+            let (from, until) = run_window(&mut f, &ctx)?;
+            f.done()?;
+            scenarios.push(Scenario { name: sname, about, start, days, events, from, until });
+        }
+    }
+    Ok(scenarios)
 }
 
 fn event(mut f: Fields, days: usize, index: &dyn Fn(&str, &str) -> Result<usize>) -> Result<Event> {
