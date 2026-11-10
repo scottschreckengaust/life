@@ -2,13 +2,15 @@ name: settings-check
 
 # Proves the repository's settings, weekly, on every push to main and by hand:
 #
-# snapshot: every setting a workflow token can read (each ruleset's rules: required checks,
-#   up to date, signatures, code scanning thresholds, review rules, tag rules; immutable
-#   releases; private vulnerability reporting; visibility and forking) must match .github/settings/expected.json, which is code-owned. To change
-#   a setting on purpose, change it in GitHub and update expected.json in a PR
-#   (REPO=owner/name bash .github/settings/snapshot.sh > .github/settings/expected.json).
+# snapshot: the repository's settings must match .github/settings/expected.json, which is
+#   code-owned: each ruleset's rules and bypass list, merge options, immutable releases,
+#   private vulnerability reporting, visibility and forking, the Actions settings (allowed
+#   actions, SHA pinning, default token, fork PR approval) and every environment's
+#   reviewers and deployment branches. On main the read-only settings App reads all of it
+#   (#77); a PR's run checks what a workflow token can read. To change a setting on purpose,
+#   change it in GitHub and update expected.json in a PR.
 #
-# The rest can't be read without an admin token, so they're proved by behaviour.
+# The probes below prove the same Actions settings by behaviour, independently of the App.
 # Settings > Actions > General:
 #
 #   - Workflow permissions: "Read repository contents and packages permissions"
@@ -41,19 +43,47 @@ jobs:
   snapshot:
     if: github.repository_owner == 'scottschreckengaust'
     runs-on: ubuntu-latest
+    # On main (pushes, the weekly run, by hand) the read-only settings App reads everything,
+    # including the `admin` section (#77). Its key lives in `settings`, which only deploys from
+    # main, so a PR's run compares what the workflow token can read, and leaves `admin` out.
+    environment: ${{ github.event_name != 'pull_request' && 'settings' || '' }}
     permissions:
       contents: read
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+      - id: reader
+        if: github.event_name != 'pull_request'
+        name: "settings-reader token: read-only (administration, actions, environments)"
+        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
+        with:
+          client-id: ${{ vars.SETTINGS_CLIENT_ID }}
+          private-key: ${{ secrets.SETTINGS_PRIVATE_KEY }}
+          permission-administration: read
+          permission-actions: read
+          permission-environments: read
       - name: the live settings match .github/settings/expected.json
         env:
-          GH_TOKEN: ${{ github.token }}
+          GH_TOKEN: ${{ steps.reader.outputs.token || github.token }}
+          FULL: ${{ steps.reader.outputs.token && '1' || '' }}
           REPO: ${{ github.repository }}
         run: |
           bash .github/settings/snapshot.sh >live.json
-          if diff -u .github/settings/expected.json live.json >settings.diff; then
+          if [[ $FULL == 1 && $(jq 'has("admin")' .github/settings/expected.json) == false ]]; then
+            # The first full run: record what's there, for a PR to commit into expected.json.
+            # From then on, any difference fails.
+            { echo '### settings: the admin section, to commit into .github/settings/expected.json'; echo '```json'; jq --sort-keys '{admin}' live.json; echo '```'; } >>"$GITHUB_STEP_SUMMARY"
+            echo "::warning title=settings snapshot::expected.json has no admin section yet; the live one is in this run's summary, to commit"
+            jq --sort-keys 'del(.admin)' live.json >live-readable.json && mv live-readable.json live.json
+            jq --sort-keys . .github/settings/expected.json >expected.json
+          elif [[ $FULL == 1 ]]; then
+            cp .github/settings/expected.json expected.json
+          else
+            jq --sort-keys 'del(.admin)' .github/settings/expected.json >expected.json
+            echo "::notice::a PR's run compares only what the workflow token can read; main checks admin too"
+          fi
+          if diff -u expected.json live.json >settings.diff; then
             echo "::notice::every readable setting matches .github/settings/expected.json"
             echo "- ✅ settings match the committed snapshot" >>"$GITHUB_STEP_SUMMARY"
             exit 0
