@@ -1,4 +1,4 @@
-use spin_life::{hhmm, iso, json, rt::Mode, Life, Rules, Scenario, PRESETS};
+use spin_life::{hhmm, iso, json, rt::Mode, Journal, Life, Rules, Scenario, PRESETS};
 use std::{process::exit, time::Duration};
 
 /// `print!` that ends the program quietly when stdout has gone away (`spin-life | head`),
@@ -7,7 +7,7 @@ macro_rules! out {
     ($($t:tt)*) => {{
         use std::io::Write as _;
         if let Err(e) = write!(std::io::stdout(), $($t)*) {
-            closed(e)
+            closed(&e)
         }
     }};
 }
@@ -18,14 +18,14 @@ macro_rules! outln {
     ($($t:tt)*) => {{
         use std::io::Write as _;
         if let Err(e) = writeln!(std::io::stdout(), $($t)*) {
-            closed(e)
+            closed(&e)
         }
     }};
 }
 
 /// Stdout failed: stop, quietly if it was just a closed pipe.
-fn closed(e: std::io::Error) -> ! {
-    let code = write_failure_exit_code(&e);
+fn closed(e: &std::io::Error) -> ! {
+    let code = write_failure_exit_code(e);
     if code != 0 {
         eprintln!("spin-life: can't write output: {e}");
     }
@@ -216,35 +216,7 @@ fn run(a: &Args) {
         if let Some(hint) = hint {
             eprintln!("{hint}");
         }
-        let journal = life.echo(false).run(mode);
-        let mut out = String::from("{");
-        let mut o = json::Obj::continuing(&mut out, true);
-        o.str("spin_life", env!("CARGO_PKG_VERSION"));
-        o.str("life", &rules.name);
-        match &rules.motto {
-            Some(m) => o.str("motto", m),
-            None => o.null("motto"),
-        }
-        json::object(o.key("scenario"), |o| {
-            o.str("name", &scenario.name);
-            o.str("about", &scenario.about);
-            o.int("days", scenario.days);
-            o.int("start", scenario.start);
-        });
-        match speed_up {
-            Some(x) => o.num("speed_up", x),
-            None => o.null("speed_up"),
-        }
-        match window {
-            Some((f, u)) => json::object(o.key("window"), |o| {
-                o.num("from", f * 3600.0);
-                o.num("until", u * 3600.0);
-            }),
-            None => o.null("window"),
-        }
-        journal.to_json(&mut out);
-        out.push('}');
-        outln!("{out}");
+        print_json(&rules, &scenario, speed_up, window, &life.echo(false).run(mode));
         return;
     }
     let pace = speed_up.map_or_else(
@@ -368,6 +340,44 @@ fn parse_args() -> Args {
 fn fail(msg: &str) -> ! {
     eprintln!("{msg}\n\n{USAGE}");
     exit(2)
+}
+
+/// `--format json`: one document on stdout, nothing else.
+fn print_json(
+    rules: &Rules,
+    scenario: &Scenario,
+    speed_up: Option<f64>,
+    window: Option<(f64, f64)>,
+    journal: &Journal,
+) {
+    let mut out = String::from("{");
+    let mut o = json::Obj::continuing(&mut out, true);
+    o.str("spin_life", env!("CARGO_PKG_VERSION"));
+    o.str("life", &rules.name);
+    match &rules.motto {
+        Some(m) => o.str("motto", m),
+        None => o.null("motto"),
+    }
+    json::object(o.key("scenario"), |o| {
+        o.str("name", &scenario.name);
+        o.str("about", &scenario.about);
+        o.int("days", scenario.days);
+        o.int("start", scenario.start);
+    });
+    match speed_up {
+        Some(x) => o.num("speed_up", x),
+        None => o.null("speed_up"),
+    }
+    match window {
+        Some((f, u)) => json::object(o.key("window"), |o| {
+            o.num("from", f * 3600.0);
+            o.num("until", u * 3600.0);
+        }),
+        None => o.null("window"),
+    }
+    journal.to_json(&mut out);
+    out.push('}');
+    outln!("{out}");
 }
 
 /// `"2m 48s"`, `"1h 12m"`, `"0.4s"`.
