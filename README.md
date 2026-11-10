@@ -171,7 +171,7 @@ events = [
 ]
 ```
 
-Events: `pursuit` (with optional `until`, `urgent`, `note`), `signal`, `coffee = <shots>`, `work_until`, `flight`
+Events: `pursuit` (with optional `until`, `urgent`, `note`), `signal`, `coffee = <shots>` (1 to 20), `work_until`, `flight`
 (and `lands`), `up_late` with `doing`, and `skip` (no windows for that pursuit today).
 
 `from`, and `until` or `for`, give a scenario its own [run window](#run-windows): `from = "06:30"`,
@@ -299,6 +299,11 @@ error, the CLI as a shell sees it, golden outputs, and real-time runs against th
 - **No dependencies.** [cargo-deny](https://github.com/EmbarkStudios/cargo-deny) ([`deny.toml`](deny.toml))
   fails CI if any crate but `spin-life` itself appears, and checks advisories, licenses and sources for the day
   one is allowed.
+- **Every clippy lint.** All of `clippy::pedantic` and `clippy::nursery` are on, as errors in CI
+  (`cargo clippy --all-targets -- -D warnings`), and a lint, once on, is never turned off. Two are allowed for
+  the whole crate, with the reason beside each in `Cargo.toml`'s `[lints.clippy]`. A single site that's right
+  as it is gets an `#[allow]` where it is, with a comment saying why: a cast that's exact or saturates on
+  purpose, a float compared exactly because it's exact by construction.
 
 ## Verify what you download
 
@@ -319,8 +324,8 @@ its own provenance, and the release workflow proves it is byte-for-byte the file
 `gh attestation verify` on a `.crate` downloaded from crates.io too.
 
 Before anything is published, the release workflow scans every asset, archives and unpacked, with
-[ClamAV](https://www.clamav.net/). The scan only reports for now; it doesn't block a release (#60). The engine and
-signature versions it used are in the release run's summary.
+[ClamAV](https://www.clamav.net/), and a finding stops the release. Each scan first proves ClamAV detects its own test
+files, so a clean result means something. The engine and signature versions are in the release run's summary.
 
 ## Contributing from a fork
 

@@ -245,6 +245,19 @@ fn long_durations_are_fine_but_daily_windows_fit_in_a_day() {
     // every night) and negatives became 0.
     Rules::parse("[pursuit.a]\n[sleep]\nsignal_after = 4294967295").unwrap();
     rejects("[pursuit.a]\n[sleep]\nsignal_after = 4294967296", "from 0 to 4294967295, not 4294967296");
+    // A scenario of 1 to 366 days, and events up to the morning after its last day.
+    for days in [1, 366] {
+        Rules::parse(&format!("[pursuit.a]\n[scenario.s]\ndays = {days}")).unwrap();
+    }
+    Rules::parse("[pursuit.a]\n[scenario.s]\ndays = 2\nevents = [{ day = 3, at = \"05:00\", coffee = 1 }]")
+        .unwrap();
+
+    // A coffee of 1 to 20 shots, both ends included.
+    for shots in [1, 20] {
+        let src =
+            format!("[pursuit.a]\n[scenario.s]\nevents = [{{ day = 1, at = \"09:00\", coffee = {shots} }}]");
+        Rules::parse(&src).unwrap();
+    }
     rejects("[pursuit.a]\n[sleep]\nsignal_after = -3", "sleep.signal_after must be a whole number from 0");
     // Only too large to be a number is refused.
     let huge = format!("PT{}H", "9".repeat(400));
@@ -373,6 +386,11 @@ fn every_wrong_value_says_what_it_should_be() {
         (&format!("{p}[sleep]\nrem_cycle = \"PT0S\""), "sleep.rem_cycle must be longer than 0"),
         // scenarios
         (&format!("{p}[scenario.s]\ndays = 0"), "scenario.s.days must be 1 to 366"),
+        (&format!("{p}[scenario.s]\ndays = 367"), "scenario.s.days must be 1 to 366"),
+        (
+            &format!("{p}[scenario.s]\ndays = 2\nevents = [{{ day = 4, coffee = 1 }}]"),
+            "scenario.s.events[0].day: 4 is outside this 2-day scenario",
+        ),
         (
             &format!("{p}[scenario.s]\ndays = \"two\""),
             "scenario.s.days should be a whole number, found a string",
@@ -389,6 +407,15 @@ fn every_wrong_value_says_what_it_should_be() {
         (
             &format!("{p}[scenario.s]\nevents = [{{ coffee = 1 }}]"),
             "scenario.s.events[0]: every event needs a `day`",
+        ),
+        // Shots used to be clamped silently: 0 was one shot, 100 was twenty.
+        (
+            &format!("{p}[scenario.s]\nevents = [{{ day = 1, at = \"09:00\", coffee = 0 }}]"),
+            "scenario.s.events[0].coffee must be 1 to 20 shots, not 0",
+        ),
+        (
+            &format!("{p}[scenario.s]\nevents = [{{ day = 1, at = \"09:00\", coffee = 21 }}]"),
+            "scenario.s.events[0].coffee must be 1 to 20 shots, not 21",
         ),
     ] {
         rejects(src, says);

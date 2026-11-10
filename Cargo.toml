@@ -1,6 +1,6 @@
 [package]
 name = "spin-life"
-version = "0.2.4"
+version = "0.2.5"
 edition = "2021"
 rust-version = "1.70"
 description = "Simulate a life from rules you write: priorities, preemption, interruptions and sleep, on a zero-dependency virtual-time async runtime."
@@ -52,24 +52,15 @@ debug = 0
 # off again. CI runs clippy with -D warnings, so each of these is an error there.
 # (MSRV 1.70's Cargo ignores this table with a warning; clippy runs on stable.)
 [lints.clippy]
-# Stage 1: mechanical, no behaviour change.
-bool_to_int_with_if = "warn"
-cast_lossless = "warn"
-default_trait_access = "warn"
-doc_markdown = "warn"
-enum_glob_use = "warn"
-format_push_string = "warn"
-ignored_unit_patterns = "warn"
-inefficient_to_string = "warn"
-items_after_statements = "warn"
-needless_for_each = "warn"
-redundant_closure_for_method_calls = "warn"
-semicolon_if_nothing_returned = "warn"
-single_match_else = "warn"
-unnested_or_patterns = "warn"
-unreadable_literal = "warn"
-derive_partial_eq_without_eq = "warn"
-or_fun_call = "warn"
-redundant_clone = "warn"
-use_self = "warn"
-useless_let_if_seq = "warn"
+# Every pedantic and nursery lint is on (#57), at `warn`, which CI turns into an error
+# (`clippy --all-targets -- -D warnings`). A lint, once on, is never turned off again. The
+# exceptions are below, each with its reason, and single sites are allowed where they are,
+# each with a comment saying why.
+pedantic = { level = "warn", priority = -1 }
+nursery = { level = "warn", priority = -1 }
+# - The runtime (src/rt.rs) is single-threaded by design: a Life and its futures never cross
+#   threads, so their futures needn't be Send.
+future_not_send = "allow"
+# - It turns a two-arm `match` on an Option into `map_or_else` with two closures, which reads
+#   worse here.
+option_if_let_else = "allow"

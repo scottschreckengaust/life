@@ -23,7 +23,7 @@ impl Activity {
         [Self::Sleep, Self::Wired, Self::Eat, Self::Work, Self::Travel, Self::Live];
 
     /// When two things overlap on the timeline, the higher rank is drawn.
-    fn rank(self) -> u8 {
+    const fn rank(self) -> u8 {
         match self {
             Self::Live => 0,
             Self::Eat => 1,
@@ -77,6 +77,7 @@ pub struct DaySummary {
 impl DaySummary {
     /// Hours spent on `name` (a pursuit, or sleep, wired, eat, work, travel, living),
     /// including the night that followed this day.
+    #[must_use]
     pub fn hours(&self, name: &str) -> f64 {
         self.names.iter().position(|n| n == name).map_or(0.0, |i| self.hours[i])
     }
@@ -122,6 +123,10 @@ impl Journal {
     }
 
     /// The name of an activity: a pursuit's name, or a built-in one.
+    ///
+    /// # Panics
+    /// If `what` is a pursuit this journal doesn't have.
+    #[must_use]
     pub fn name(&self, what: Activity) -> &str {
         match what {
             Activity::Pursuit(i) => &self.pursuits[i].0,
@@ -133,6 +138,7 @@ impl Journal {
     }
 
     /// One character on the timeline.
+    #[must_use]
     pub fn glyph(&self, what: Activity) -> char {
         match what {
             Activity::Sleep => 'z',
@@ -152,13 +158,15 @@ impl Journal {
     }
 
     /// How many days the journal covers.
-    pub fn days(&self) -> usize {
+    #[must_use]
+    pub const fn days(&self) -> usize {
         self.last + 1 - self.first
     }
 
     /// The day numbers the journal covers (1-based): every day of the scenario, or only the
     /// ones a [window](Journal::clip) touches.
-    pub fn day_range(&self) -> std::ops::RangeInclusive<usize> {
+    #[must_use]
+    pub const fn day_range(&self) -> std::ops::RangeInclusive<usize> {
         self.first..=self.last
     }
 
@@ -191,6 +199,10 @@ impl Journal {
     }
 
     /// Totals for day `day` (1-based).
+    ///
+    /// # Panics
+    /// Never: every span's activity is one of this journal's activities.
+    #[must_use]
     pub fn day(&self, day: usize) -> DaySummary {
         let all = self.activities();
         let mut hours = vec![0.0; all.len()];
@@ -202,8 +214,11 @@ impl Journal {
     }
 
     /// What you were doing on calendar day `day` (1-based) at `hour` o'clock.
+    #[must_use]
     pub fn doing(&self, day: usize, hour: f64) -> Option<&str> {
-        self.doing_at((day - 1) as f64 * EARTH_SPIN + hour).map(|a| self.name(a))
+        #[allow(clippy::cast_precision_loss)] // exact for any day below 2^53
+        let d = (day - 1) as f64;
+        self.doing_at(d.mul_add(EARTH_SPIN, hour)).map(|a| self.name(a))
     }
 
     fn doing_at(&self, t: f64) -> Option<Activity> {
@@ -211,6 +226,7 @@ impl Journal {
     }
 
     /// Did the diary mention `needle`?
+    #[must_use]
     pub fn said(&self, needle: &str) -> bool {
         self.moments.iter().any(|m| m.note.contains(needle))
     }
@@ -219,13 +235,19 @@ impl Journal {
     pub fn timeline(&self) -> String {
         let end = self.spans.iter().map(|s| s.end).fold(0.0, f64::max);
         let start = self.spans.iter().map(|s| s.start).fold(f64::INFINITY, f64::min);
-        let first = if start.is_finite() { (start / EARTH_SPIN).floor() as usize + 1 } else { 1 };
-        let rows = (end / EARTH_SPIN).ceil() as usize;
+        // Span times are hours from the start of day 1: finite and not negative. `as` saturates.
+        #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+        let (first, rows) = (
+            if start.is_finite() { (start / EARTH_SPIN).floor() as usize + 1 } else { 1 },
+            (end / EARTH_SPIN).ceil() as usize,
+        );
         let mut out = String::from("        0     3     6     9     12    15    18    21    24\n");
         for d in first..=rows {
             let row: String = (0..48)
                 .map(|k| {
-                    let t = (d - 1) as f64 * EARTH_SPIN + f64::from(k) * 0.5 + 0.25;
+                    #[allow(clippy::cast_precision_loss)] // a day number: exact in f64
+                    let day = (d - 1) as f64;
+                    let t = f64::from(k).mul_add(0.5, day * EARTH_SPIN) + 0.25;
                     self.doing_at(t).map_or(' ', |a| self.glyph(a))
                 })
                 .collect();

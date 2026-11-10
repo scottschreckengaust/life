@@ -19,11 +19,15 @@ changelog line per commit from its title.
 - When a PR breaks the public API, its title **shall** carry `!` (`feat!:`, `fix!:`).
   **(CI: `semver`)**
 - When a PR reverses or reworks a change that hasn't been released yet, its title **shall**
-  describe the final behaviour, and its description **shall** say which earlier PR it
-  supersedes, so that PR's changelog line can be corrected before the release.
-- The release PR **shall not** be edited by hand, except to correct the changelog as the
-  very last change before it merges. Every merge to `main` regenerates it and discards
-  hand edits.
+  describe the final behaviour, and it **shall** correct the earlier PR's changelog line in
+  `release-plz.toml`'s `[changelog]`: a `{ sha = "<its commit>", skip = true }` parser to
+  drop it, or a `commit_preprocessors` rewrite to reword it. The file says how. Its
+  description **shall** say which earlier PR it supersedes. **(CI: `changelog-config`
+  proves past releases are unchanged, and previews the next one in its summary)**
+- When a merged PR's changelog line reads wrong, the fix **shall** be the same kind of
+  correction in `release-plz.toml`, in its own PR.
+- The release PR **shall not** be edited by hand. Every merge to `main` regenerates it and
+  discards hand edits.
 
 ## Code
 

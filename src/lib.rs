@@ -51,7 +51,10 @@ const TICK: f64 = 0.25;
 
 /// `"d3 07:30"` for an absolute simulated hour, with seconds only when there are some:
 /// `"d1 06:30:15"`, `"d1 06:30:02.5"` (to the millisecond).
+#[must_use]
 pub fn hhmm(abs: f64) -> String {
+    #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+    // `as` from f64 saturates (NaN is 0), and the value is clamped at 0 first: no wrap.
     let ms = (abs * 3_600_000.0).round().max(0.0) as u64;
     let (day, ms) = (ms / 86_400_000 + 1, ms % 86_400_000);
     let (h, m, sec, frac) = (ms / 3_600_000, ms / 60_000 % 60, ms / 1000 % 60, ms % 1000);
@@ -67,12 +70,12 @@ pub fn hhmm(abs: f64) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{hhmm, rt::Mode, Life, Opportunity, Rules};
+    use super::{hhmm, rt::Mode, Kind, Life, Opportunity, Rules};
 
     const AGENT: &str = include_str!("../presets/agent.life.toml");
 
     fn windows(life: &Life) -> Vec<f64> {
-        life.opps.borrow().iter().filter(|o| o.scheduled).map(|o| o.at).collect()
+        life.opps.borrow().iter().filter(|o| o.kind == Kind::Window).map(|o| o.at).collect()
     }
 
     #[test]
@@ -89,17 +92,17 @@ mod tests {
         assert_eq!(windows(&life), [17.0, 41.0, 65.0, 89.0, 113.0, 137.0, 161.0], "never past the last day");
 
         // Day 4's is spent; days 1 and 2 are over at 42:00 (day 2's ends exactly then).
-        life.opps.borrow_mut().iter_mut().find(|o| o.at == 89.0).unwrap().used = true;
+        #[allow(clippy::float_cmp)] // abs() rounds to the millisecond: 89 h is exact
+        let day4 = |o: &&mut Opportunity| o.at == 89.0;
+        life.opps.borrow_mut().iter_mut().find(day4).unwrap().used = true;
         // An unused urgent event that has expired stays: it can still wake you tonight.
         let page = Opportunity {
             pursuit: 0,
             at: 30.0,
             ends: None,
             expires: 31.0,
-            urgent: true,
             note: None,
-            rested: false,
-            scheduled: false,
+            kind: Kind::Urgent,
             used: false,
         };
         life.opps.borrow_mut().push(page);
@@ -144,13 +147,22 @@ struct Opportunity {
     ends: Option<f64>,
     /// Gone after this (a swell flattens out, family dinner ends).
     expires: f64,
-    urgent: bool,
     note: Option<String>,
-    /// Produced by a good night's sleep.
-    rested: bool,
-    /// A recurring `when` window. Like urgent events, these can preempt.
-    scheduled: bool,
+    kind: Kind,
     used: bool,
+}
+
+/// Where an opportunity came from. Each is exactly one of these.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Kind {
+    /// A scenario event, or a signal's chance at a pursuit.
+    Event,
+    /// An urgent event: it preempts, and can wake you.
+    Urgent,
+    /// A recurring `when` window. Like urgent events, these preempt.
+    Window,
+    /// Produced by a good night's sleep.
+    Rested,
 }
 
 /// One day, after the scenario's events have been applied to the rules. Hours are local.
@@ -222,10 +234,13 @@ impl Drop for Doing<'_, '_> {
 /// whole millisecond, so a time compared with it has to be one too: unrounded, day 2's 02:13
 /// is a hair past the millisecond its alarm rings on, and the page that rang it was missed.
 fn abs(day: usize, hour: f64) -> f64 {
-    iso::round_ms((day - 1) as f64 * EARTH_SPIN + hour)
+    #[allow(clippy::cast_precision_loss)] // a run is at most 366 days: exact in f64
+    let d = (day - 1) as f64;
+    iso::round_ms(d.mul_add(EARTH_SPIN, hour))
 }
 
 impl<'r> Life<'r> {
+    #[must_use]
     pub fn new(rules: &'r Rules, scenario: &Scenario) -> Self {
         let n = scenario.days;
         let mut plans: Vec<Plan> = (0..=n)
@@ -263,10 +278,8 @@ impl<'r> Life<'r> {
                         at,
                         ends,
                         expires,
-                        urgent: *urgent,
                         note: note.clone(),
-                        rested: false,
-                        scheduled: false,
+                        kind: if *urgent { Kind::Urgent } else { Kind::Event },
                         used: false,
                     });
                 }
@@ -281,10 +294,8 @@ impl<'r> Life<'r> {
                             at,
                             ends: None,
                             expires,
-                            urgent: false,
                             note: None,
-                            rested: false,
-                            scheduled: false,
+                            kind: Kind::Event,
                             used: false,
                         });
                     }
@@ -339,10 +350,8 @@ impl<'r> Life<'r> {
                         at,
                         ends: Some(end),
                         expires: end,
-                        urgent: false,
                         note: None,
-                        rested: false,
-                        scheduled: true,
+                        kind: Kind::Window,
                         used: false,
                     });
                 }
@@ -355,10 +364,11 @@ impl<'r> Life<'r> {
     /// urgent events wake you, so a window over by `now` can never be picked). Order is kept,
     /// so ties still go to the same one. Call it only while no opportunity index is held.
     fn prune(&self, now: f64) {
-        self.opps.borrow_mut().retain(|o| !o.used && !(o.scheduled && o.expires <= now));
+        self.opps.borrow_mut().retain(|o| !o.used && (o.kind != Kind::Window || o.expires > now));
     }
 
     /// Print the diary to stdout as it happens.
+    #[must_use]
     pub fn echo(self, on: bool) -> Self {
         if on {
             self.echo_to(std::io::stdout())
@@ -370,6 +380,7 @@ impl<'r> Life<'r> {
 
     /// Write the diary to `out` as it happens, one line per entry. If a write fails (a closed
     /// pipe, a full disk), the echo stops; the journal still has everything.
+    #[must_use]
     pub fn echo_to(self, out: impl std::io::Write + Send + 'static) -> Self {
         *self.echo.0.borrow_mut() = Some(std::panic::AssertUnwindSafe(Box::new(out)));
         self
@@ -391,6 +402,7 @@ impl<'r> Life<'r> {
     ///
     /// # Panics
     /// If the window is empty or reaches outside the run.
+    #[must_use]
     pub fn window(mut self, from: Option<f64>, until: Option<f64>) -> Self {
         let (start, end) = (self.starts_at(), self.ends_at());
         let (f, u) = (from.unwrap_or(start), until.unwrap_or(end));
@@ -460,7 +472,7 @@ impl<'r> Life<'r> {
 
     async fn morning(&self) {
         self.log(if self.today.get() == 1 { "⏰ rise and shine" } else { "⏰ alarm: the earth spun once" });
-        if self.opps.borrow().iter().any(|o| o.rested && !o.used) {
+        if self.opps.borrow().iter().any(|o| o.kind == Kind::Rested && !o.used) {
             self.log(self.rules.sleep.signal_note.clone());
         }
         self.log("🍳 breakfast");
@@ -496,6 +508,9 @@ impl<'r> Life<'r> {
         let plan = self.plan();
         let (close, horizon) = (self.at(plan.dinner), self.at(plan.bed));
         let order = if plan.works { &self.rules.workday } else { &self.rules.weekend };
+        // Both sides are on the clock's millisecond (`now()` always is, and `abs` rounds to it),
+        // so this compares whole milliseconds, not drifting floats.
+        #[allow(clippy::while_float)]
         while self.now() < close {
             let idle = self.now();
             let mut arms: Vec<rt::BoxFuture<'_, Option<usize>>> =
@@ -529,7 +544,11 @@ impl<'r> Life<'r> {
         let next_wake = abs(self.today.get() + 1, self.plans[self.today.get()].wake);
         let woken_by = &self.rules.sleep.woken_by;
         let disturbs = move |o: &Opportunity| {
-            !o.used && o.urgent && woken_by.contains(&o.pursuit) && o.at >= lights_out && o.at < next_wake
+            !o.used
+                && o.kind == Kind::Urgent
+                && woken_by.contains(&o.pursuit)
+                && o.at >= lights_out
+                && o.at < next_wake
         };
         // Whatever your rules say may wake you rings the same alarm as the sunrise.
         let ringers: Vec<rt::JoinHandle> = self
@@ -585,16 +604,14 @@ impl<'r> Life<'r> {
             for (i, _) in
                 self.rules.pursuits.iter().enumerate().filter(|(_, p)| p.on.as_ref() == Some(&s.signal))
             {
-                if !opps.iter().any(|o| o.rested && !o.used && o.pursuit == i) {
+                if !opps.iter().any(|o| o.kind == Kind::Rested && !o.used && o.pursuit == i) {
                     opps.push(Opportunity {
                         pursuit: i,
                         at: now,
                         ends: None,
                         expires: f64::INFINITY,
-                        urgent: false,
                         note: None,
-                        rested: true,
-                        scheduled: false,
+                        kind: Kind::Rested,
                         used: false,
                     });
                 }
@@ -637,7 +654,7 @@ impl<'r> Life<'r> {
                 .then(|| {
                     self.next(|q| {
                         !q.used
-                            && (q.urgent || q.scheduled)
+                            && matches!(q.kind, Kind::Urgent | Kind::Window)
                             && rules.pursuits[q.pursuit].preempts.contains(&p)
                             && q.at < end
                             && q.at < horizon
@@ -723,6 +740,9 @@ impl<'r> Life<'r> {
         &self.plans[self.today.get() - 1]
     }
 
+    // A method, so it reads as `self.now()` beside `self.at(h)` and `self.today`, though the
+    // clock is the runtime's, not this Life's.
+    #[allow(clippy::unused_self)]
     fn now(&self) -> f64 {
         rt::now()
     }
@@ -754,11 +774,13 @@ impl<'r> Life<'r> {
             .borrow()
             .iter()
             .filter(|cup| cup.0 == today && cup.1 >= abs(today, c.cutoff))
-            .map(|cup| cup.1 + c.wired + c.per_extra_shot * f64::from(cup.2.saturating_sub(1)))
+            .map(|cup| c.per_extra_shot.mul_add(f64::from(cup.2.saturating_sub(1)), cup.1 + c.wired))
             .fold(f64::NEG_INFINITY, f64::max);
         iso::round_ms(wired)
     }
 
+    #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+    // Hours slept and the cycle are both positive; `as` saturates past u32::MAX cycles.
     fn cycles(hours: f64, cycle: f64) -> u32 {
         (hours / cycle + 1e-9).floor() as u32
     }

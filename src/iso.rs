@@ -12,11 +12,18 @@
 const MS_PER_HOUR: f64 = 3_600_000.0;
 
 /// Round hours to the nearest millisecond.
+#[must_use]
 pub fn round_ms(hours: f64) -> f64 {
     (hours * MS_PER_HOUR).round() / MS_PER_HOUR
 }
 
 /// A time of day, `hh:mm[:ss[.fff]]`, as hours after midnight. `24:00` is the end of the day.
+///
+/// # Errors
+/// If `s` isn't one; the message says why and shows a valid example.
+///
+/// # Panics
+/// Never: both fields are checked to be digits before they're parsed.
 pub fn time(s: &str) -> Result<f64, String> {
     let s = s.trim();
     let bad =
@@ -25,7 +32,7 @@ pub fn time(s: &str) -> Result<f64, String> {
         return Err(bad("one time, not a window"));
     }
     let mut parts = s.split(':');
-    let (Some(h), Some(m)) = (parts.next(), parts.next()) else {
+    let (Some(hh), Some(mm)) = (parts.next(), parts.next()) else {
         return Err(bad("needs hh:mm"));
     };
     let sec = parts.next();
@@ -33,43 +40,49 @@ pub fn time(s: &str) -> Result<f64, String> {
         return Err(bad("too many parts"));
     }
     let two = |p: &str| p.len() == 2 && p.bytes().all(|b| b.is_ascii_digit());
-    if !two(h) || !two(m) {
+    if !two(hh) || !two(mm) {
         return Err(bad("hours and minutes need 2 digits each"));
     }
-    let (h, m): (u32, u32) = (h.parse().unwrap(), m.parse().unwrap());
+    let (hours, minutes): (u32, u32) = (hh.parse().unwrap(), mm.parse().unwrap());
     let secs = match sec {
         None => 0.0,
-        Some(p) => {
-            let (whole, frac) = match p.split_once(['.', ',']) {
-                Some((w, f)) => (w, Some(f)),
-                None => (p, None),
+        Some(ss) => {
+            let (whole, frac) = match ss.split_once(['.', ',']) {
+                Some((whole, frac)) => (whole, Some(frac)),
+                None => (ss, None),
             };
             if !two(whole) {
                 return Err(bad("seconds need 2 digits"));
             }
-            if let Some(f) = frac {
-                if f.is_empty() || f.len() > 9 || !f.bytes().all(|b| b.is_ascii_digit()) {
+            if let Some(digits) = frac {
+                if digits.is_empty() || digits.len() > 9 || !digits.bytes().all(|b| b.is_ascii_digit()) {
                     return Err(bad("the fraction needs 1 to 9 digits"));
                 }
             }
-            let v: f64 = format!("{whole}.{}", frac.unwrap_or("0")).parse().unwrap();
-            if v >= 60.0 {
+            let secs: f64 = format!("{whole}.{}", frac.unwrap_or("0")).parse().unwrap();
+            if secs >= 60.0 {
                 return Err(bad("seconds go up to 59"));
             }
-            v
+            secs
         }
     };
-    if m >= 60 {
+    if minutes >= 60 {
         return Err(bad("minutes go up to 59"));
     }
-    if h > 24 || (h == 24 && (m > 0 || secs > 0.0)) {
+    if hours > 24 || (hours == 24 && (minutes > 0 || secs > 0.0)) {
         return Err(bad("hours go up to 23, or 24:00 for midnight at the end of the day"));
     }
-    Ok(round_ms(f64::from(h) + f64::from(m) / 60.0 + secs / 3600.0))
+    Ok(round_ms(f64::from(hours) + f64::from(minutes) / 60.0 + secs / 3600.0))
 }
 
 /// An ISO 8601 duration, `P[nD][T[nH][nM][nS]]` or `PnW`, as hours. Only the last component
 /// may have a fraction.
+///
+/// # Errors
+/// If `s` isn't one; the message says why and shows a valid example., or if it's too large to count in milliseconds.
+///
+/// # Panics
+/// Never: each number is checked to be digits with at most one point before it's parsed.
 pub fn duration(s: &str) -> Result<f64, String> {
     let s = s.trim();
     let hint = "use one like PT1H30M, PT2.5S or P1DT6H";
@@ -116,7 +129,7 @@ pub fn duration(s: &str) -> Result<f64, String> {
                     return Err(bad(&format!("`{c}` needs a number before it")));
                 }
                 fraction_seen = num.contains('.');
-                total += num.parse::<f64>().unwrap() * hours;
+                total = num.parse::<f64>().unwrap().mul_add(hours, total);
                 last_order = order;
                 num.clear();
                 any = true;
@@ -144,6 +157,9 @@ pub fn duration(s: &str) -> Result<f64, String> {
 
 /// A point in a run, as absolute hours since midnight at the start of day 1: a time of day
 /// (on day 1, `06:30:00`) or a duration from that midnight (`P1DT18H` is day 2 at 18:00).
+///
+/// # Errors
+/// If `s` isn't one; the message says why and shows a valid example.
 pub fn when(s: &str) -> Result<f64, String> {
     if s.trim_start().starts_with('P') {
         duration(s)
@@ -154,6 +170,9 @@ pub fn when(s: &str) -> Result<f64, String> {
 
 /// An ISO 8601 interval of times of day, `start/end` or `start/duration`, as `(start, end)`
 /// hours. An end at or before the start crosses midnight.
+///
+/// # Errors
+/// If `s` isn't one; the message says why and shows a valid example.
 pub fn window(s: &str) -> Result<(f64, f64), String> {
     let s = s.trim();
     let Some((a, b)) = s.split_once('/') else {
@@ -197,10 +216,10 @@ mod tests {
     #[test]
     fn times() {
         close(time("06:30").unwrap(), 6.5);
-        close(time("06:30:15").unwrap(), 6.5 + 15.0 * S);
-        close(time("06:30:02.5").unwrap(), 6.5 + 2.5 * S);
-        close(time("06:30:02,5").unwrap(), 6.5 + 2.5 * S);
-        close(time("23:59:59.999").unwrap(), 24.0 - 0.001 * S);
+        close(time("06:30:15").unwrap(), 15.0f64.mul_add(S, 6.5));
+        close(time("06:30:02.5").unwrap(), 2.5f64.mul_add(S, 6.5));
+        close(time("06:30:02,5").unwrap(), 2.5f64.mul_add(S, 6.5));
+        close(time("23:59:59.999").unwrap(), 0.001f64.mul_add(-S, 24.0));
         close(time("00:00:00.123456789").unwrap(), 0.123 * S); // up to 9 digits, rounded to the ms
         close(time("00:00").unwrap(), 0.0);
         close(time("24:00").unwrap(), 24.0);
@@ -282,7 +301,7 @@ mod tests {
     fn whens() {
         close(when("06:30").unwrap(), 6.5);
         close(when("P1DT18H").unwrap(), 42.0);
-        close(when("PT6H30M2.5S").unwrap(), 6.5 + 2.5 * S);
+        close(when("PT6H30M2.5S").unwrap(), 2.5f64.mul_add(S, 6.5));
         assert!(when("d2 18:00").unwrap_err().contains("P1DT18H"));
     }
 
