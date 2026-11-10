@@ -417,7 +417,7 @@ PR and its merge), the release-tagger App (`v*` tags) and `github-actions[bot]` 
 
 1. **crates.io trusted publishing** (done): owner `scottschreckengaust`, repository `life`, workflow
    `release.yml`, environment `release`. Delete any `CARGO_REGISTRY_TOKEN` secret and revoke the token.
-2. **The release-bot App** opens, updates and (through release-cut) merges the release PR. A GitHub App with no
+2. **The release-bot App** ([`life-release-bot`](https://github.com/settings/apps/life-release-bot)) opens, updates and (through release-cut) merges the release PR. A GitHub App with no
    webhook and two permissions, *Contents* and *Pull requests: read and write* (no *Workflows*), installed on
    this repository only. Its Client ID is the variable `BOT_CLIENT_ID` and a private key the secret
    `BOT_PRIVATE_KEY`, both in the **`bot` environment**, which deploys only from `main`. Because its pushes and
@@ -434,7 +434,7 @@ PR and its merge), the release-tagger App (`v*` tags) and `github-actions[bot]` 
      there; both are harmless until published, and a re-run reuses them.
 
    No job holds both powers. Rehearsals use no environment, so they can reach neither.
-4. **The release-tagger App**, the only identity allowed to create `v*` tags. A GitHub App with no webhook and
+4. **The release-tagger App** ([`life-github-app`](https://github.com/settings/apps/life-github-app), App ID 5417633), the only identity allowed to create `v*` tags. A GitHub App with no webhook and
    one permission, *Contents: read and write*, installed on this repository only. Its Client ID is the
    `tag` environment variable `TAGGER_CLIENT_ID`, and a private key is the environment secret
    `TAGGER_PRIVATE_KEY`. The workflows mint a one-hour token from it only to create the tag. Check the wiring any time: run *release-cut* from `main` with **check_tagger** ticked.
