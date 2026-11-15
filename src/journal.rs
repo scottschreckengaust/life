@@ -391,7 +391,7 @@ mod tests {
         j.spans = vec![Span { day: 2, what: Activity::Live, start: 30.0, end: 31.0 }];
         let days = j.day_range();
         j.clip(40.0, 41.0);
-        assert!(j.spans.is_empty());
+        assert_eq!(j.spans, []);
         assert_eq!(j.day_range(), days, "no spans left: the range it had stays");
     }
 }
