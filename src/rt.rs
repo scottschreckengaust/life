@@ -282,9 +282,8 @@ impl JoinHandle {
     /// Drop the task wherever it is suspended.
     pub fn abort(&self) {
         with(|e| {
-            if let Some(slot) = e.tasks.borrow_mut().get_mut(self.0) {
-                *slot = None;
-            }
+            // The id came from `spawn`, so its slot exists; it may already be empty.
+            e.tasks.borrow_mut()[self.0] = None;
         });
     }
 }

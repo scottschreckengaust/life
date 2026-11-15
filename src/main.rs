@@ -25,11 +25,17 @@ macro_rules! outln {
 
 /// Stdout failed: stop, quietly if it was just a closed pipe.
 fn closed(e: &std::io::Error) -> ! {
-    let code = write_failure_exit_code(e);
-    if code != 0 {
-        eprintln!("spin-life: can't write output: {e}");
+    eprint!("{}", write_failure_message(e));
+    exit(write_failure_exit_code(e))
+}
+
+/// What to say when stdout fails: nothing for a closed pipe, otherwise why.
+fn write_failure_message(e: &std::io::Error) -> String {
+    if e.kind() == std::io::ErrorKind::BrokenPipe {
+        String::new()
+    } else {
+        format!("spin-life: can't write output: {e}\n")
     }
-    exit(code)
 }
 
 /// A closed pipe (`spin-life | head`) is a normal way to stop: exit 0. On Unix the restored
@@ -395,7 +401,7 @@ fn wall(secs: f64) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{wall, write_failure_exit_code};
+    use super::{wall, write_failure_exit_code, write_failure_message};
     use std::io::{Error, ErrorKind};
 
     #[test]
@@ -403,6 +409,13 @@ mod tests {
         assert_eq!(write_failure_exit_code(&Error::from(ErrorKind::BrokenPipe)), 0);
         assert_eq!(write_failure_exit_code(&Error::from(ErrorKind::WriteZero)), 1);
         assert_eq!(write_failure_exit_code(&Error::from(ErrorKind::PermissionDenied)), 1);
+        // A closed pipe is quiet; anything else says why. (On Unix a closed pipe ends us by
+        // SIGPIPE before closed() runs, so only this test sees the quiet case there.)
+        assert_eq!(write_failure_message(&Error::from(ErrorKind::BrokenPipe)), "");
+        assert_eq!(
+            write_failure_message(&Error::from(ErrorKind::WriteZero)),
+            "spin-life: can't write output: write zero\n"
+        );
     }
 
     #[test]
