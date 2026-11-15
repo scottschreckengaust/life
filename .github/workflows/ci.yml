@@ -26,7 +26,15 @@ jobs:
       - name: Rust (rust-toolchain.toml)
         run: .github/ci/rust.sh
       - run: cargo fmt --check
-      - run: cargo clippy --all-targets -- -D warnings
+      # Findings become annotations (file and line, readable without the log): a new Rust
+      # brings new lints, and the toolchain PR that adopts it has to see them to fix them.
+      - name: clippy
+        run: |
+          cargo clippy --all-targets --message-format=short -- -D warnings 2>&1 | tee "$RUNNER_TEMP/clippy.log" || {
+            grep -E '^[^ ]+:[0-9]+:[0-9]+: (error|warning)' "$RUNNER_TEMP/clippy.log" | head -n 50 |
+              sed -E 's/^([^:]+):([0-9]+):([0-9]+): (error|warning): (.*)$/::error file=\1,line=\2,col=\3::\5/'
+            exit 1
+          }
       - run: cargo test --locked
       - run: for f in presets/*.toml; do cargo run -q --release -- check "$f"; done
       - name: release scripts' tests
