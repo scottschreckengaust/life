@@ -414,17 +414,37 @@ fn name_ok(kind: &str, name: &str) -> Result<()> {
     Ok(())
 }
 
-/// Whitespace (Unicode `White_Space`), control characters (`Cc`), and format characters
-/// (`Cf`): zero-width spaces and joiners, bidirectional overrides that make text display in a
-/// different order than it's stored, the byte-order mark, tags. None of them shows as itself.
+/// Unicode's format characters (`Cf`), as inclusive ranges: zero-width spaces and joiners,
+/// bidirectional overrides that make text display in a different order than it's stored, the
+/// byte-order mark, the soft hyphen, tags. None of them shows as itself.
+const FORMAT: [(u32, u32); 21] = [
+    (0xAD, 0xAD),
+    (0x600, 0x605),
+    (0x61C, 0x61C),
+    (0x6DD, 0x6DD),
+    (0x70F, 0x70F),
+    (0x890, 0x891),
+    (0x8E2, 0x8E2),
+    (0x180E, 0x180E),
+    (0x200B, 0x200F),
+    (0x202A, 0x202E),
+    (0x2060, 0x2064),
+    (0x2066, 0x206F),
+    (0xFEFF, 0xFEFF),
+    (0xFFF9, 0xFFFB),
+    (0x110BD, 0x110BD),
+    (0x110CD, 0x110CD),
+    (0x13430, 0x1343F),
+    (0x1BCA0, 0x1BCA3),
+    (0x1D173, 0x1D17A),
+    (0xE0001, 0xE0001),
+    (0xE0020, 0xE007F),
+];
+
+/// Whitespace (Unicode `White_Space`), control characters (`Cc`) and format characters
+/// ([`FORMAT`]): none of them shows as itself.
 fn invisible(c: char) -> bool {
-    c.is_whitespace()
-        || c.is_control()
-        || matches!(c as u32,
-            0xAD | 0x600..=0x605 | 0x61C | 0x6DD | 0x70F | 0x890..=0x891 | 0x8E2 | 0x180E
-            | 0x200B..=0x200F | 0x202A..=0x202E | 0x2060..=0x2064 | 0x2066..=0x206F | 0xFEFF
-            | 0xFFF9..=0xFFFB | 0x110BD | 0x110CD | 0x13430..=0x1343F | 0x1BCA0..=0x1BCA3
-            | 0x1D173..=0x1D17A | 0xE0001 | 0xE0020..=0xE007F)
+    c.is_whitespace() || c.is_control() || FORMAT.iter().any(|&(lo, hi)| (lo..=hi).contains(&u32::from(c)))
 }
 
 /// The `[pursuit.*]` tables, unparsed, in the order you rank them (workday first).
