@@ -9,6 +9,6 @@
 # that PR changes `channel`, and fixes whatever the new Rust reports (clippy's new lints,
 # coverage's line counting). Rehearse it: it's the release toolchain too.
 [toolchain]
-channel = "1.99.1"
+channel = "1.99.0"
 components = ["clippy", "rustfmt", "llvm-tools-preview"]
 profile = "minimal"
