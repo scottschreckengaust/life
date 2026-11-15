@@ -20,6 +20,8 @@ on:
       - .github/release/**
       - release-plz.toml
       - Cargo.toml
+      - rust-toolchain.toml
+      - .github/ci/rust.sh
 
 permissions: {}
 
@@ -55,7 +57,7 @@ jobs:
           fi
           all=$(gh api "repos/$REPO/pulls/$PR/files" --paginate --jq '.[].filename')
           # File names come from the PR (maybe a fork): only plain path characters get into the comment.
-          files=$(grep -E '^(\.github/workflows/release(-cut|-plz)?\.yml|\.github/release/[A-Za-z0-9._/-]+|release-plz\.toml|Cargo\.toml)$' <<<"$all" |
+          files=$(grep -E '^(\.github/workflows/release(-cut|-plz)?\.yml|\.github/release/[A-Za-z0-9._/-]+|release-plz\.toml|Cargo\.toml|rust-toolchain\.toml|\.github/ci/rust\.sh)$' <<<"$all" |
             sed 's/^/- /' || true)
           [[ -n "$files" ]] || { echo "no release files changed"; exit 0; }
           body="$marker

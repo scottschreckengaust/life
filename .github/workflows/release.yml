@@ -17,7 +17,7 @@ name: release
 #            bytes it uploads are the attested .crate.
 #   verify   crates.io's index checksum and served .crate match the attested bytes,
 #            provenance verifies on the downloaded file, and `cargo install` from
-#            crates.io runs.
+#            crates.io runs with the oldest Rust we promise (Cargo.toml's rust-version).
 # It starts when the release PR merges (a push to main), whether a person or release-cut (as
 # the release-bot App) merged it. A run dispatched on a v* tag works too.
 #
@@ -45,8 +45,8 @@ concurrency:
   cancel-in-progress: false
 
 env:
-  # One toolchain for packaging and publishing, so the .crate bytes are reproducible.
-  RUST_TOOLCHAIN: "1.97.0"
+  # One toolchain (rust-toolchain.toml) for building, packaging and publishing, the same one
+  # CI tests with, so the .crate bytes are reproducible.
   CARGO_TERM_COLOR: always
 
 # bash -eo pipefail, so a failure inside a pipeline fails the step (GitHub's default shell
@@ -180,10 +180,10 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # v1
-        with:
-          toolchain: ${{ env.RUST_TOOLCHAIN }}
-          targets: ${{ matrix.target }}
+      - name: Rust (rust-toolchain.toml)
+        env:
+          TARGET: ${{ matrix.target }}
+        run: .github/ci/rust.sh --target "$TARGET"
       - id: dist
         name: build, archive, checksum
         uses: taiki-e/upload-rust-binary-action@f0d45ae91ee7b8ee928de7a9d04d893a08bcbec6 # v1.30.2
@@ -224,9 +224,8 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # v1
-        with:
-          toolchain: ${{ env.RUST_TOOLCHAIN }}
+      - name: Rust (rust-toolchain.toml)
+        run: .github/ci/rust.sh
       - id: pack
         env:
           NAME: ${{ needs.plan.outputs.name }}
@@ -356,9 +355,8 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # v1
-        with:
-          toolchain: ${{ env.RUST_TOOLCHAIN }}
+      - name: Rust (rust-toolchain.toml)
+        run: .github/ci/rust.sh
       - name: the bytes we upload are the bytes we attested
         env:
           WANT: ${{ needs.crate.outputs.sha256 }}
@@ -438,15 +436,29 @@ jobs:
             --signer-workflow "$GITHUB_REPOSITORY/.github/workflows/release.yml" \
             --source-digest "$GITHUB_SHA" \
             --deny-self-hosted-runners
-      - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # v1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         if: env.REHEARSAL != 'true'
         with:
-          toolchain: stable
-      - name: cargo install from crates.io
+          persist-credentials: false
+          path: src-tree
+          sparse-checkout: |
+            .github/ci
+            Cargo.toml
+          sparse-checkout-cone-mode: false
+      # Install it the way a user would, with the oldest Rust we promise (Cargo.toml's
+      # `rust-version`): a release can't ship a crate that breaks that promise.
+      - name: Rust (Cargo.toml rust-version)
+        if: env.REHEARSAL != 'true'
+        working-directory: src-tree
+        run: |
+          msrv=$(sed -n 's/^rust-version *= *"\(.*\)"/\1/p' Cargo.toml)
+          echo "MSRV=$msrv" >>"$GITHUB_ENV"
+          TOOLCHAIN=$msrv .github/ci/rust.sh
+      - name: cargo install from crates.io, with the MSRV
         if: env.REHEARSAL != 'true'
         run: |
           for attempt in 1 2 3 4 5; do
-            cargo install "$NAME" --version "$VERSION" --locked --root "$RUNNER_TEMP/from-crates-io" && break
+            cargo +"$MSRV" install "$NAME" --version "$VERSION" --locked --root "$RUNNER_TEMP/from-crates-io" && break
             echo "attempt $attempt failed; retrying in 30s"; sleep 30
           done
           "$RUNNER_TEMP/from-crates-io/bin/spin-life" --version | grep -Fx "spin-life $VERSION"

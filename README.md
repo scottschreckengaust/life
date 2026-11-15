@@ -296,6 +296,11 @@ error, the CLI as a shell sees it, golden outputs, and real-time runs against th
   dependency-free). A minute per target on PRs that touch the code, 15 minutes weekly. A crash fails the run and
   prints its input, which becomes a regular test. Locally, with a nightly toolchain:
   `cargo +nightly fuzz run toml` (or `iso`, `life`), seeded from `fuzz/seeds/`.
+- **One Rust.** [`rust-toolchain.toml`](rust-toolchain.toml) pins the Rust that every CI job, every release
+  build and your local `cargo` use, so nothing changes under an unchanged commit. Two jobs deliberately differ:
+  `msrv` builds and tests with the oldest Rust we promise (`rust-version` in `Cargo.toml`), and so does the
+  release's `cargo install` check; `fuzz` needs nightly. A newer Rust is a PR that changes `channel` and fixes
+  whatever it reports.
 - **No dependencies.** [cargo-deny](https://github.com/EmbarkStudios/cargo-deny) ([`deny.toml`](deny.toml))
   fails CI if any crate but `spin-life` itself appears, and checks advisories, licenses and sources for the day
   one is allowed.

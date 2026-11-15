@@ -49,12 +49,16 @@ changelog line per commit from its title.
 - Every workflow **shall** start from `permissions: {}`, each job asking for only what it
   uses; the one exception is `default-token-check.yml`. **(CI: `check-workflows.sh`)**
 - Every run step **shall** run under `bash -eo pipefail`. **(CI: `check-workflows.sh`)**
+- Every job **shall** get its Rust from `rust-toolchain.toml`, through `.github/ci/rust.sh`,
+  except `msrv` (Cargo.toml's `rust-version`) and `fuzz` (its pinned nightly). No job
+  **shall** install a moving channel such as `stable`. **(CI: `check-workflows.sh`)**
 - Every action **shall** be pinned to a full commit SHA, with the release in a comment, and a
   new pin **shall** be at least 7 days old. **(repository setting, Dependabot cooldown)**
 - When a PR adds an action, it **shall** also list every action that action uses itself, so
   the allowed-actions setting can be updated before it merges.
 - When a PR changes the release machinery (`release.yml`, `release-cut.yml`,
-  `release-plz.yml`, `.github/release/`, `release-plz.toml`, `Cargo.toml`) or an action pin,
+  `release-plz.yml`, `.github/release/`, `release-plz.toml`, `Cargo.toml`,
+  `rust-toolchain.toml`, `.github/ci/rust.sh`) or an action pin,
   it **shall** be rehearsed on a `release/**` branch before it merges. **(reminder:
   `rehearse-reminder`)**
 - Code scanning findings **shall** be fixed, or dismissed with a written reason by the
