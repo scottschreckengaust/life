@@ -282,8 +282,15 @@ impl Rules {
         for (i, (pname, mut f)) in specs.into_iter().enumerate() {
             let ctx = format!("pursuit.{pname}");
             let glyph = match f.str("glyph")? {
-                Some(g) if g.chars().count() == 1 => g.chars().next().unwrap(),
+                Some(g) if g.chars().count() == 1 => {
+                    let c = g.chars().next().unwrap();
+                    if invisible(c) {
+                        return fail(format!("{ctx}.glyph: `{g}` must be a visible character"));
+                    }
+                    c
+                }
                 Some(g) => return fail(format!("{ctx}.glyph: `{g}` must be one character")),
+                // `name_ok` made sure the name has a first letter, and that it's visible.
                 None => pname.chars().next().unwrap().to_ascii_uppercase(),
             };
             let note = f.str("note")?.unwrap_or_else(|| format!("▶ {pname}"));
@@ -392,11 +399,60 @@ impl Rules {
     }
 }
 
+/// A pursuit's or scenario's name is how you refer to it (in priorities, `preempts`, on the
+/// command line) and where its default glyph comes from: it can't be empty, and every
+/// character has to be one you can see.
+fn name_ok(kind: &str, name: &str) -> Result<()> {
+    if name.is_empty() {
+        return fail(format!("[{kind}.{name:?}]: a name can't be empty"));
+    }
+    if name.chars().any(invisible) {
+        return fail(format!(
+            "[{kind}.{name:?}]: a name can't contain spaces, control characters or invisible formatting"
+        ));
+    }
+    Ok(())
+}
+
+/// Unicode's format characters (`Cf`), as inclusive ranges: zero-width spaces and joiners,
+/// bidirectional overrides that make text display in a different order than it's stored, the
+/// byte-order mark, the soft hyphen, tags. None of them shows as itself.
+const FORMAT: [(u32, u32); 21] = [
+    (0xAD, 0xAD),
+    (0x600, 0x605),
+    (0x61C, 0x61C),
+    (0x6DD, 0x6DD),
+    (0x70F, 0x70F),
+    (0x890, 0x891),
+    (0x8E2, 0x8E2),
+    (0x180E, 0x180E),
+    (0x200B, 0x200F),
+    (0x202A, 0x202E),
+    (0x2060, 0x2064),
+    (0x2066, 0x206F),
+    (0xFEFF, 0xFEFF),
+    (0xFFF9, 0xFFFB),
+    (0x110BD, 0x110BD),
+    (0x110CD, 0x110CD),
+    (0x13430, 0x1343F),
+    (0x1BCA0, 0x1BCA3),
+    (0x1D173, 0x1D17A),
+    (0xE0001, 0xE0001),
+    (0xE0020, 0xE007F),
+];
+
+/// Whitespace (Unicode `White_Space`), control characters (`Cc`) and format characters
+/// ([`FORMAT`]): none of them shows as itself.
+fn invisible(c: char) -> bool {
+    c.is_whitespace() || c.is_control() || FORMAT.iter().any(|&(lo, hi)| (lo..=hi).contains(&u32::from(c)))
+}
+
 /// The `[pursuit.*]` tables, unparsed, in the order you rank them (workday first).
 fn pursuit_specs(root: &mut Fields) -> Result<Vec<(String, Fields)>> {
     let mut specs = Vec::new();
     if let Some(table) = root.table("pursuit")? {
         for (pname, value) in table {
+            name_ok("pursuit", &pname)?;
             if BUILTIN.contains(&pname.as_str()) {
                 return fail(format!("[pursuit.{pname}]: `{pname}` is built in; pick another name"));
             }
@@ -518,6 +574,7 @@ fn scenarios_section(
     let mut scenarios = Vec::new();
     if let Some(table) = root.table("scenario")? {
         for (sname, value) in table {
+            name_ok("scenario", &sname)?;
             let ctx = format!("scenario.{sname}");
             let Value::Table(t) = value else { return fail(format!("`{ctx}` must be a table")) };
             let mut f = Fields::new(&ctx, t);
