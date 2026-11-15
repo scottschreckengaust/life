@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Every workflow starts from no token permissions and runs its steps under bash -eo
-# pipefail. GitHub's default shell is `bash -e` with no pipefail, so `a | b` there passes
+# Every workflow starts from no token permissions, runs its steps under bash -eo pipefail,
+# and gets its Rust from rust-toolchain.toml. GitHub's default shell is `bash -e` with no pipefail, so `a | b` there passes
 # when `a` fails, which is how the release plan once read a failed tag lookup as "no tag".
 # Fails listing the offenders.
 set -euo pipefail
@@ -32,6 +32,17 @@ for f in "$dir"/*.yml "$dir"/*.yaml; do
   # opts out of pipefail.
   if grep -nE '^ +shell:' "$f" | grep -vE '^[0-9]+: +shell: *bash *(#.*)?$'; then
     echo "::error file=$f::a job or step sets a shell other than plain 'bash'"
+    bad=1
+  fi
+  # One Rust (#97): rust-toolchain.toml, installed by .github/ci/rust.sh. No toolchain
+  # action, and no job asks for a moving channel or names a version of its own. The two
+  # deliberate exceptions read theirs from one place: msrv from Cargo.toml, fuzz from $NIGHTLY.
+  if grep -nE 'dtolnay/rust-toolchain|actions-rust-lang/setup-rust-toolchain' "$f"; then
+    echo "::error file=$f::install Rust with .github/ci/rust.sh (rust-toolchain.toml), not a toolchain action"
+    bad=1
+  fi
+  if grep -nE '(cargo|rustc|rustup)[^#]*(\+|toolchain (install|add) +)(stable|beta|nightly)([^-]|$)|RUST_TOOLCHAIN|toolchain: ' "$f"; then
+    echo "::error file=$f::don't name a moving channel (stable, beta, nightly) or a toolchain of a job's own: use rust-toolchain.toml"
     bad=1
   fi
 done

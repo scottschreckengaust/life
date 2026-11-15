@@ -1,0 +1,14 @@
+# The one Rust this repository builds, tests, lints, measures and releases with (#97). rustup
+# reads this file, so every CI job and your local `cargo` use the same toolchain.
+#
+# Two jobs deliberately use another: `msrv` runs Cargo.toml's `rust-version` (the oldest Rust
+# we promise to build on), and `fuzz` runs its pinned nightly. Nothing else names a version;
+# .github/ci/check-workflows.sh enforces that.
+#
+# Dependabot proposes a newer Rust a week after its release (package-ecosystem rust-toolchain):
+# that PR changes `channel`, and fixes whatever the new Rust reports (clippy's new lints,
+# coverage's line counting). Rehearse it: it's the release toolchain too.
+[toolchain]
+channel = "1.99.0"
+components = ["clippy", "rustfmt", "llvm-tools-preview"]
+profile = "minimal"
