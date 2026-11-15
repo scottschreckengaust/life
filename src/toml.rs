@@ -297,8 +297,9 @@ impl Parser<'_> {
                 break;
             }
         }
-        String::from_utf8(self.s[start..self.i - 1].to_vec())
-            .or_else(|_| self.err("string is not valid UTF-8"))
+        // The bytes between two ASCII quotes of a &str are always valid UTF-8, so nothing is
+        // ever replaced here; `lossy` just says so without an error path that can't happen.
+        Ok(String::from_utf8_lossy(&self.s[start..self.i - 1]).into_owned())
     }
 
     fn boolean(&mut self) -> Result<Value, Error> {

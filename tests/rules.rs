@@ -428,6 +428,10 @@ fn every_wrong_value_says_what_it_should_be() {
             &format!("{p}[scenario.s]\nevents = [{{ coffee = 1 }}]"),
             "scenario.s.events[0]: every event needs a `day`",
         ),
+        (
+            &format!("{p}[scenario.s]\nevents = [{{ day = 1, up_late = \"01:00\" }}]"),
+            "scenario.s.events[0]: `up_late` needs `doing = \"<pursuit>\"`",
+        ),
         // Shots used to be clamped silently: 0 was one shot, 100 was twenty.
         (
             &format!("{p}[scenario.s]\nevents = [{{ day = 1, at = \"09:00\", coffee = 0 }}]"),

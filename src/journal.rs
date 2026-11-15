@@ -384,4 +384,14 @@ mod tests {
         assert_eq!(j.moments.len(), 1);
         assert_eq!(j.moments[0].note, "on time");
     }
+
+    #[test]
+    fn clipping_to_nothing_keeps_the_day_range() {
+        let mut j = Journal::new(3, vec![], "idea".into());
+        j.spans = vec![Span { day: 2, what: Activity::Live, start: 30.0, end: 31.0 }];
+        let days = j.day_range();
+        j.clip(40.0, 41.0);
+        assert!(j.spans.is_empty());
+        assert_eq!(j.day_range(), days, "no spans left: the range it had stays");
+    }
 }
