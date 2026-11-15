@@ -389,14 +389,24 @@ fn every_wrong_value_says_what_it_should_be() {
         (&format!("{p}[scenario.s]\ndays = 367"), "scenario.s.days must be 1 to 366"),
         // Found by fuzzing: an empty pursuit name panicked taking its first letter as the glyph.
         ("[pursuit.\"\"]", "[pursuit.\"\"]: a name can't be empty"),
-        ("[pursuit.\" \"]", "[pursuit.\" \"]: a name can't contain spaces or control characters"),
-        ("[pursuit.\"a b\"]", "[pursuit.\"a b\"]: a name can't contain spaces or control characters"),
+        ("[pursuit.\" \"]", "[pursuit.\" \"]: a name can't contain spaces, control characters or invisible formatting"),
+        ("[pursuit.\"a b\"]", "[pursuit.\"a b\"]: a name can't contain spaces, control characters or invisible formatting"),
         (&format!("{p}[scenario.\"\"]"), "[scenario.\"\"]: a name can't be empty"),
         (
             &format!("{p}[scenario.\"a\\tb\"]"),
-            "[scenario.\"a\\tb\"]: a name can't contain spaces or control characters",
+            "[scenario.\"a\\tb\"]: a name can't contain spaces, control characters or invisible formatting",
         ),
         ("[pursuit.a]\nglyph = \" \"", "pursuit.a.glyph: ` ` must be a visible character"),
+        // Invisible, not "control": a zero-width space, a right-to-left override, a BOM.
+        ("[pursuit.\"a\\u200Bb\"]", "[pursuit.\"a\\u{200b}b\"]: a name can't contain spaces, control characters or invisible formatting"),
+        ("[pursuit.\"a\\u202Eb\"]", "[pursuit.\"a\\u{202e}b\"]: a name can't contain spaces, control characters or invisible formatting"),
+        ("[pursuit.\"\\uFEFFa\"]", "[pursuit.\"\\u{feff}a\"]: a name can't contain spaces, control characters or invisible formatting"),
+        ("[pursuit.a]\nglyph = \"\\u200B\"", "must be a visible character"),
+        // Control characters: bell, escape and DEL; whitespace beyond space and tab.
+        ("[pursuit.\"a\\u0007b\"]", "[pursuit.\"a\\u{7}b\"]: a name can't contain"),
+        ("[pursuit.\"a\\u001Bb\"]", "[pursuit.\"a\\u{1b}b\"]: a name can't contain"),
+        ("[pursuit.\"a\\u007Fb\"]", "[pursuit.\"a\\u{7f}b\"]: a name can't contain"),
+        ("[pursuit.\"a\\u00A0b\"]", "[pursuit.\"a\\u{a0}b\"]: a name can't contain"),
         (
             &format!("{p}[scenario.s]\ndays = 2\nevents = [{{ day = 4, coffee = 1 }}]"),
             "scenario.s.events[0].day: 4 is outside this 2-day scenario",
