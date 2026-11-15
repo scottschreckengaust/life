@@ -387,6 +387,16 @@ fn every_wrong_value_says_what_it_should_be() {
         // scenarios
         (&format!("{p}[scenario.s]\ndays = 0"), "scenario.s.days must be 1 to 366"),
         (&format!("{p}[scenario.s]\ndays = 367"), "scenario.s.days must be 1 to 366"),
+        // Found by fuzzing: an empty pursuit name panicked taking its first letter as the glyph.
+        ("[pursuit.\"\"]", "[pursuit.\"\"]: a name can't be empty"),
+        ("[pursuit.\" \"]", "[pursuit.\" \"]: a name can't contain spaces or control characters"),
+        ("[pursuit.\"a b\"]", "[pursuit.\"a b\"]: a name can't contain spaces or control characters"),
+        (&format!("{p}[scenario.\"\"]"), "[scenario.\"\"]: a name can't be empty"),
+        (
+            &format!("{p}[scenario.\"a\\tb\"]"),
+            "[scenario.\"a\\tb\"]: a name can't contain spaces or control characters",
+        ),
+        ("[pursuit.a]\nglyph = \" \"", "pursuit.a.glyph: ` ` must be a visible character"),
         (
             &format!("{p}[scenario.s]\ndays = 2\nevents = [{{ day = 4, coffee = 1 }}]"),
             "scenario.s.events[0].day: 4 is outside this 2-day scenario",

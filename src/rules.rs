@@ -282,8 +282,15 @@ impl Rules {
         for (i, (pname, mut f)) in specs.into_iter().enumerate() {
             let ctx = format!("pursuit.{pname}");
             let glyph = match f.str("glyph")? {
-                Some(g) if g.chars().count() == 1 => g.chars().next().unwrap(),
+                Some(g) if g.chars().count() == 1 => {
+                    let c = g.chars().next().unwrap();
+                    if c.is_whitespace() || c.is_control() {
+                        return fail(format!("{ctx}.glyph: `{g}` must be a visible character"));
+                    }
+                    c
+                }
                 Some(g) => return fail(format!("{ctx}.glyph: `{g}` must be one character")),
+                // `name_ok` made sure the name has a first letter, and that it's visible.
                 None => pname.chars().next().unwrap().to_ascii_uppercase(),
             };
             let note = f.str("note")?.unwrap_or_else(|| format!("▶ {pname}"));
@@ -392,11 +399,25 @@ impl Rules {
     }
 }
 
+/// A pursuit's or scenario's name is how you refer to it (in priorities, `preempts`, on the
+/// command line) and where its default glyph comes from: it can't be empty, and it can't
+/// hold whitespace or control characters.
+fn name_ok(kind: &str, name: &str) -> Result<()> {
+    if name.is_empty() {
+        return fail(format!("[{kind}.{name:?}]: a name can't be empty"));
+    }
+    if name.chars().any(|c| c.is_whitespace() || c.is_control()) {
+        return fail(format!("[{kind}.{name:?}]: a name can't contain spaces or control characters"));
+    }
+    Ok(())
+}
+
 /// The `[pursuit.*]` tables, unparsed, in the order you rank them (workday first).
 fn pursuit_specs(root: &mut Fields) -> Result<Vec<(String, Fields)>> {
     let mut specs = Vec::new();
     if let Some(table) = root.table("pursuit")? {
         for (pname, value) in table {
+            name_ok("pursuit", &pname)?;
             if BUILTIN.contains(&pname.as_str()) {
                 return fail(format!("[pursuit.{pname}]: `{pname}` is built in; pick another name"));
             }
@@ -518,6 +539,7 @@ fn scenarios_section(
     let mut scenarios = Vec::new();
     if let Some(table) = root.table("scenario")? {
         for (sname, value) in table {
+            name_ok("scenario", &sname)?;
             let ctx = format!("scenario.{sname}");
             let Value::Table(t) = value else { return fail(format!("`{ctx}` must be a table")) };
             let mut f = Fields::new(&ctx, t);
