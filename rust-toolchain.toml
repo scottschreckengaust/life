@@ -5,8 +5,9 @@
 # we promise to build on), and `fuzz` runs its pinned nightly. Nothing else names a version;
 # .github/ci/check-workflows.sh enforces that.
 #
-# To move to a newer Rust, change `channel` in a PR and fix whatever it reports (clippy's new
-# lints, coverage's line counting).
+# Dependabot proposes a newer Rust a week after its release (package-ecosystem rust-toolchain):
+# that PR changes `channel`, and fixes whatever the new Rust reports (clippy's new lints,
+# coverage's line counting). Rehearse it: it's the release toolchain too.
 [toolchain]
 channel = "1.99.1"
 components = ["clippy", "rustfmt", "llvm-tools-preview"]

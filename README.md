@@ -299,8 +299,8 @@ error, the CLI as a shell sees it, golden outputs, and real-time runs against th
 - **One Rust.** [`rust-toolchain.toml`](rust-toolchain.toml) pins the Rust that every CI job, every release
   build and your local `cargo` use, so nothing changes under an unchanged commit. Two jobs deliberately differ:
   `msrv` builds and tests with the oldest Rust we promise (`rust-version` in `Cargo.toml`), and so does the
-  release's `cargo install` check; `fuzz` needs nightly. A newer Rust is a PR that changes `channel` and fixes
-  whatever it reports.
+  release's `cargo install` check; `fuzz` needs nightly. Dependabot opens that PR when a new Rust is a week old: it
+  changes `channel`, and the fixes for whatever the new Rust reports go in the same PR.
 - **No dependencies.** [cargo-deny](https://github.com/EmbarkStudios/cargo-deny) ([`deny.toml`](deny.toml))
   fails CI if any crate but `spin-life` itself appears, and checks advisories, licenses and sources for the day
   one is allowed.
