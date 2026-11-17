@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.6](https://github.com/scottschreckengaust/life/compare/v0.2.5...v0.2.6) - 2026-11-15
+
+### Fixed
+
+- an empty or blank pursuit or scenario name is an error, not a crash ([#95](https://github.com/scottschreckengaust/life/pull/95))
+
+### Other
+
+- build with Rust 1.100.0, and cover the paths it shows were never taken ([#102](https://github.com/scottschreckengaust/life/pull/102))
+- one Rust for everything, from rust-toolchain.toml, installed with rustup ([#101](https://github.com/scottschreckengaust/life/pull/101))
+- clippy ratchet stage 5, every pedantic and nursery lint on ([#92](https://github.com/scottschreckengaust/life/pull/92))
+- clippy ratchet stage 4, the design ([#90](https://github.com/scottschreckengaust/life/pull/90))
+
 ## [0.2.5](https://github.com/scottschreckengaust/life/compare/v0.2.4...v0.2.5) - 2026-10-31
 
 ### Fixed
