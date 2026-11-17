@@ -85,7 +85,7 @@ jobs:
       # between releases, and the 100% rule must not change under an unchanged commit.
       - name: Rust (rust-toolchain.toml)
         run: .github/ci/rust.sh
-      - uses: taiki-e/install-action@b80e2bb2635f28eb98b9fce1e2f0887e1535c6b2 # v2.90.0
+      - uses: taiki-e/install-action@cfdb7ed4ccc7c7dce37759eae89dc5674b469b39 # v2.90.3
         with:
           tool: cargo-llvm-cov@0.9.1
       - run: cargo llvm-cov --locked --all-targets --lcov --output-path lcov.info
@@ -107,7 +107,7 @@ jobs:
           fetch-depth: 0
       - name: Rust (rust-toolchain.toml)
         run: .github/ci/rust.sh
-      - uses: taiki-e/install-action@b80e2bb2635f28eb98b9fce1e2f0887e1535c6b2 # v2.90.0
+      - uses: taiki-e/install-action@cfdb7ed4ccc7c7dce37759eae89dc5674b469b39 # v2.90.3
         with:
           tool: cargo-semver-checks@0.51.0
       - name: cargo semver-checks against the last release
@@ -143,7 +143,7 @@ jobs:
           persist-credentials: false
       - name: Rust (rust-toolchain.toml)
         run: .github/ci/rust.sh
-      - uses: taiki-e/install-action@b80e2bb2635f28eb98b9fce1e2f0887e1535c6b2 # v2.90.0
+      - uses: taiki-e/install-action@cfdb7ed4ccc7c7dce37759eae89dc5674b469b39 # v2.90.3
         with:
           tool: cargo-deny@0.20.2
       - run: cargo deny --locked check
@@ -211,7 +211,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           ZIZMOR: "1.31.1"
         run: pipx run "zizmor==$ZIZMOR" --format sarif --no-exit-codes . >zizmor.sarif
-      - uses: github/codeql-action/upload-sarif@1fc58d04a4d4374f921bdac573c3811c240f9c26 # v4.39.2
+      - uses: github/codeql-action/upload-sarif@33d7b85da1a04171e211befe2c739303b9a4c066 # v4.39.3
         with:
           sarif_file: zizmor.sarif
           category: zizmor
@@ -264,7 +264,7 @@ jobs:
           fetch-depth: 0 # the base branch, to diff against
       - name: Rust (rust-toolchain.toml)
         run: .github/ci/rust.sh
-      - uses: taiki-e/install-action@b80e2bb2635f28eb98b9fce1e2f0887e1535c6b2 # v2.90.0
+      - uses: taiki-e/install-action@cfdb7ed4ccc7c7dce37759eae89dc5674b469b39 # v2.90.3
         with:
           tool: cargo-mutants@27.1.0
       - name: mutate the lines this PR changes
@@ -302,7 +302,7 @@ jobs:
           persist-credentials: false
       - name: Rust (rust-toolchain.toml)
         run: .github/ci/rust.sh
-      - uses: taiki-e/install-action@b80e2bb2635f28eb98b9fce1e2f0887e1535c6b2 # v2.90.0
+      - uses: taiki-e/install-action@cfdb7ed4ccc7c7dce37759eae89dc5674b469b39 # v2.90.3
         with:
           tool: cargo-mutants@27.1.0
       # Round-robin, so the slow mutants (the runtime's, which time out) spread over the shards.
